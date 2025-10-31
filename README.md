@@ -7,6 +7,7 @@ Shows the weather conditions along a route.
 ### Weather API:
 
 Docs: https://developer.yr.no/doc/
+Swagger: https://api.met.no/weatherapi/locationforecast/2.0/swagger
 
 [Terms of Service](https://developer.yr.no/doc/TermsOfService/):
 
@@ -38,3 +39,6 @@ Bandwith:
 ## Routing:
 
 Open Street Map
+
+## Generating API
+https://github.com/swagger-api/swagger-codegen

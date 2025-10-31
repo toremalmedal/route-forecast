@@ -1,38 +1,47 @@
-#![deny(warnings)]
+struct Position {
+    lat: String,
+    lon: String,
+}
 
-// This is using the `tokio` runtime. You'll need the following dependency:
-//
-// `tokio = { version = "1", features = ["full"] }`
+use location_forecast_client::apis::configuration::Configuration;
+use location_forecast_client::apis::data_api::compact_get;
+
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
-    // Some simple CLI args requirements...
-    let url = if let Some(url) = std::env::args().nth(1) {
-        url
+    let lat = if let Some(lat) = std::env::args().nth(1) {
+        lat.parse::<f32>().unwrap()
     } else {
-        println!("No CLI URL provided, using default.");
-        "https://hyper.rs".into()
+        println!("No lat provided, using default for Arendal.");
+        58.4618
     };
 
-    eprintln!("Fetching {url:?}...");
+    let long = if let Some(long) = std::env::args().nth(2) {
+        long.parse::<f32>().unwrap()
+    } else {
+        println!("No long provided, using default for Arendal.");
+        8.7724
+    };
 
-    // reqwest::get() is a convenience function.
+    let mut conf = Configuration::new();
+    conf.user_agent = Some("fredfull.no post@fredfull.no".into());
+    let result = compact_get(&conf, lat, long, None).await;
+    let forecast = result.unwrap().properties.timeseries;
+    println!("{:?}", forecast);
+
+    //     let params = [("lat", lat), ("lon", long)];
+    //     let get_request = client.get(url).query(&params);
+    //     println!("{get_request:?}");
     //
-    // In most cases, you should create/build a reqwest::Client and reuse
-    // it for all requests.
-
-    let client = reqwest::Client::builder()
-        .user_agent("fredfull.no post@fredfull.no")
-        .build()?;
-
-    let get_request = client.get(url);
-    let res = get_request.send().await?;
-
-    eprintln!("Response: {:?} {}", res.version(), res.status());
-    eprintln!("Headers: {:#?}\n", res.headers());
-
-    let body = res.text().await?;
-
-    println!("{body}");
+    //     let res = get_request.send().await?;
+    //
+    //
+    //
+    //     eprintln!("Request URL: {}", res.url());
+    //     eprintln!("Response: {:?} {}", res.version(), res.status());
+    //     eprintln!("Headers: {:#?}\n", res.headers());
+    //
+    //     let body = res.text().await?;
+    // println!("{body}");
 
     Ok(())
 }
