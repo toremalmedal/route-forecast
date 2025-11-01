@@ -21,3 +21,9 @@ echo "$(jq '. += {"host": "api.met.no", "schemes": ["https"]}' location-forecast
 docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate -i /local/location-forecast-swagger-edit.json -g rust -o /local/location-forecast-client --package-name=location-forecast-client
 cargo add --path ./location-forecast-client
 rm location-forecast-swagger.json location-forecast-swagger-edit.json
+
+curl https://docs.openrouteservice.org/all/docs | jq >>ors-swagger.json
+echo "$(jq 'del(.paths["/pois"])' ors-swagger.json)" >ors-swagger-edit.json
+docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate -i /local/ors-swagger-edit.json -g rust -o /local/ors-client --package-name=ors-client
+cargo add --path ./ors-client
+rm ors-swagger.json ors-swagger-edit.json

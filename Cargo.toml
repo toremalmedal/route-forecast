@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 location-forecast-client = { version = "2.0.0", path = "location-forecast-client" }
+ors-client = { version = "2.0.0", path = "ors-client" }
 reqwest = "0.12.24"
 tokio = { version = "1.46.0", features = ["macros", "rt-multi-thread"] }

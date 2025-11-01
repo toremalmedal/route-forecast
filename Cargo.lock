@@ -629,6 +629,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ors-client"
+version = "2.0.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "url",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1270,6 +1281,7 @@ name = "weather-route"
 version = "0.1.0"
 dependencies = [
  "location-forecast-client",
+ "ors-client",
  "reqwest",
  "tokio",
 ]

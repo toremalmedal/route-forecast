@@ -40,5 +40,8 @@ Bandwith:
 
 Open Street Map
 
+ToS: https://openrouteservice.org/restrictions/
+Free plan: https://account.heigit.org/info/plans
+
 ## Generating API
 https://github.com/swagger-api/swagger-codegen
