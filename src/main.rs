@@ -3,6 +3,7 @@ struct Position {
     lon: f32,
 }
 
+use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
 use location_forecast_client::apis::Error;
 use location_forecast_client::apis::configuration::Configuration as LocationForecastConfiguration;
 use location_forecast_client::apis::data_api::{CompactGetError, compact_get};
@@ -14,6 +15,9 @@ use ors_client::models::DirectionsService;
 
 // The spec we generate our ors_client from lacks the response signature of features from GeoJSON:
 mod geo_json_200_response;
+use reqwest::Client;
+use reqwest::header::HeaderMap;
+use reqwest_middleware::ClientBuilder;
 use serde::Deserialize;
 
 use crate::geo_json_200_response::{Feature, Step};
@@ -32,6 +36,7 @@ async fn main() -> Result<(), reqwest::Error> {
         "route" => handle_route_command().await,
         x => println!("No command '{x}' found"),
     }
+
     Ok(())
 }
 
@@ -59,7 +64,15 @@ async fn handle_forecast_command() {
 
 async fn get_forecast(pos: Position) -> Result<MetjsonForecast, Error<CompactGetError>> {
     let mut location_config = LocationForecastConfiguration::new();
+    let middleware_client = ClientBuilder::new(Client::new())
+        .with(Cache(HttpCache {
+            mode: CacheMode::Default,
+            manager: CACacheManager::new("./cache/".into(), false),
+            options: HttpCacheOptions::default(),
+        }))
+        .build();
     location_config.user_agent = Some("fredfull.no post@fredfull.no".into());
+    location_config.client = middleware_client;
     compact_get(&location_config, pos.lat, pos.lon, None).await
 }
 
@@ -67,14 +80,32 @@ async fn handle_route_command() {
     // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
     let coords = vec![vec![7.1808, 62.7403], vec![8.7724, 58.4618]];
 
-    let mut route_config = ORSConfiguration::new();
-    route_config.user_agent = Some("fredfull.no post@fredfull.no".into());
-
     let api_key = if let Some(api_key) = std::env::args().nth(2) {
         api_key
     } else {
         panic!("No api key!")
     };
+
+    let mut route_config = ORSConfiguration::new();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        reqwest::header::HeaderValue::from_str(&api_key.clone()).unwrap(),
+    );
+
+    let client = Client::builder().default_headers(headers).build().unwrap();
+
+    let middleware_client = ClientBuilder::new(client)
+        .with(Cache(HttpCache {
+            mode: CacheMode::Default,
+            manager: CACacheManager::new("./cache/".into(), false),
+            options: HttpCacheOptions::default(),
+        }))
+        .build();
+
+    route_config.client = middleware_client;
+    route_config.user_agent = Some("fredfull.no post@fredfull.no".into());
 
     route_config.api_key = Some(ors_client::apis::configuration::ApiKey {
         prefix: None,
