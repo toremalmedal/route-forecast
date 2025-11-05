@@ -1283,6 +1283,7 @@ dependencies = [
  "location-forecast-client",
  "ors-client",
  "reqwest",
+ "serde",
  "tokio",
 ]
 

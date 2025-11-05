@@ -43,5 +43,22 @@ Open Street Map
 ToS: https://openrouteservice.org/restrictions/
 Free plan: https://account.heigit.org/info/plans
 
+When generating the client using openapi-generator, authorization does not seem to be implemented properly.
+I "fixed" this by adding the api_key 'key' property to the authorization header:
+
+```rust
+// ors-client/src/apis/directions_service_api.rs:160
+if let Some(ref api_key) = configuration.api_key {
+    req_builder = req_builder.header(reqwest::header::AUTHORIZATION, api_key.key.clone())
+}
+```
+```
+
 ## Generating API
+
+https://github.com/OpenAPITools/openapi-generator
 https://github.com/swagger-api/swagger-codegen
+
+## Generating serde structs from a json blob:
+
+https://transform.tools/json-to-rust-serde
