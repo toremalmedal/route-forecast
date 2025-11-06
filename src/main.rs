@@ -44,13 +44,29 @@ impl RouteForecast for RouteForecastService {
         request: tonic::Request<proto::RouteWithForecastRequest>,
     ) -> Result<tonic::Response<proto::RouteWithForecastResponse>, tonic::Status> {
         print!("Got a request: {:?}", request);
+
+        let ors_api_key = match std::env::var("ORS_API_KEY") {
+            Ok(val) => val,
+            Err(e) => {
+                panic!("couldn't find env var ORS_API_KEY: {e}");
+            }
+        };
+
+        let user_agent = match std::env::var("USER_AGENT") {
+            Ok(val) => val,
+            Err(e) => {
+                panic!("couldn't find env var USER_AGENT: {e}");
+            }
+        };
+
         let input = request.get_ref();
         let coords = input
             .coordinates
             .iter()
             .map(|coord| vec![coord.longitude, coord.latitude])
             .collect();
-        let forecasts = handle_route_command(coords, input.number_of_forecasts).await;
+        let forecasts =
+            handle_route_command(coords, input.number_of_forecasts, user_agent, ors_api_key).await;
         let response = proto::RouteWithForecastResponse { forecasts };
         Ok(tonic::Response::new(response))
     }
@@ -74,7 +90,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn get_forecast(pos: Position) -> Result<MetjsonForecast, Error<CompactGetError>> {
+async fn get_forecast(
+    pos: Position,
+    user_agent: String,
+) -> Result<MetjsonForecast, Error<CompactGetError>> {
+    let location_config = create_forecast_client(user_agent);
+    compact_get(&location_config, pos.lat, pos.lon, None).await
+}
+
+fn create_forecast_client(user_agent: String) -> LocationForecastConfiguration {
     let mut location_config = LocationForecastConfiguration::new();
     let middleware_client = ClientBuilder::new(Client::new())
         .with(Cache(HttpCache {
@@ -83,23 +107,12 @@ async fn get_forecast(pos: Position) -> Result<MetjsonForecast, Error<CompactGet
             options: HttpCacheOptions::default(),
         }))
         .build();
-    location_config.user_agent = Some("fredfull.no post@fredfull.no".into());
+    location_config.user_agent = Some(user_agent);
     location_config.client = middleware_client;
-    compact_get(&location_config, pos.lat, pos.lon, None).await
+    location_config
 }
 
-async fn handle_route_command(
-    coords: Vec<Vec<f64>>,
-    number_of_forecasts: f64,
-) -> Vec<proto::Forecast> {
-    let api_key = match std::env::var("ORS_API_KEY") {
-        Ok(val) => val,
-        Err(e) => {
-            println!("couldn't find env var ORS_API_KEY: {e}");
-            return vec![];
-        }
-    };
-
+fn create_ors_client(user_agent: String, api_key: String) -> ORSConfiguration {
     let mut route_config = ORSConfiguration::new();
 
     let mut headers = HeaderMap::new();
@@ -119,12 +132,22 @@ async fn handle_route_command(
         .build();
 
     route_config.client = middleware_client;
-    route_config.user_agent = Some("fredfull.no post@fredfull.no".into());
+    route_config.user_agent = Some(user_agent);
 
     route_config.api_key = Some(ors_client::apis::configuration::ApiKey {
         prefix: None,
         key: api_key,
     });
+    route_config
+}
+
+async fn handle_route_command(
+    coords: Vec<Vec<f64>>,
+    number_of_forecasts: f64,
+    user_agent: String,
+    api_key: String,
+) -> Vec<proto::Forecast> {
+    let route_config = create_ors_client(user_agent.clone(), api_key);
 
     // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
     let direction_service_options = DirectionsService::new(coords);
@@ -142,20 +165,20 @@ async fn handle_route_command(
 
     // Attribution is required to use open route services
     // https://openrouteservice.org/terms-of-service/
-    let metadata = match result.metadata {
-        Some(metadata) => match metadata.attribution {
-            Some(attribution) => attribution,
-            None => {
-                println!("No attribution found in metadata from route service, using default ");
-                "© openrouteservice.org by HeiGIT | Map data © OpenStreetMap contributors"
-                    .to_string()
-            }
-        },
-        None => {
-            println!("No metadata returned by route service, using default");
-            "© openrouteservice.org by HeiGIT | Map data © OpenStreetMap contributors".to_string()
-        }
-    };
+    //let metadata = match result.metadata {
+    //    Some(metadata) => match metadata.attribution {
+    //        Some(attribution) => attribution,
+    //        None => {
+    //            println!("No attribution found in metadata from route service, using default ");
+    //            "© openrouteservice.org by HeiGIT | Map data © OpenStreetMap contributors"
+    //                .to_string()
+    //        }
+    //    },
+    //    None => {
+    //        println!("No metadata returned by route service, using default");
+    //        "© openrouteservice.org by HeiGIT | Map data © OpenStreetMap contributors".to_string()
+    //    }
+    //};
 
     let feature = match result.features {
         Some(features) => features[0].clone(),
@@ -210,21 +233,23 @@ async fn handle_route_command(
             latitude: pos.lat as f64,
         };
 
-        let result = get_forecast(pos).await;
-        let air_temperature = match result {
+        let result = get_forecast(pos, user_agent.clone()).await;
+        match result {
             Ok(forecast) => {
                 let current_hour = forecast.properties.timeseries[0].clone();
                 let instant_details = current_hour.data.instant.details;
-                let time = current_hour.time;
-                println!("Weather for:  {:?} at {}", names.get(names_index), time);
+                // let time = current_hour.time;
                 names_index += 1;
                 match instant_details {
                     None => {
                         panic!("No instant details found");
                     }
                     Some(d) => {
-                        println!("Temperature: {:?}", d.air_temperature.unwrap());
-                        d.air_temperature.unwrap()
+                        let current_forecast = proto::Forecast {
+                            position: Some(coord),
+                            air_temperature: d.air_temperature.unwrap(),
+                        };
+                        forecasts.push(current_forecast);
                     }
                 }
             }
@@ -232,12 +257,6 @@ async fn handle_route_command(
                 panic!("{err}");
             }
         };
-
-        let current_forecast = proto::Forecast {
-            position: Some(coord),
-            air_temperature,
-        };
-        forecasts.push(current_forecast);
     }
     forecasts
 }
