@@ -3,6 +3,8 @@ struct Position {
     lon: f32,
 }
 
+use core::panic;
+
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
 use location_forecast_client::apis::Error;
 use location_forecast_client::apis::configuration::Configuration as LocationForecastConfiguration;
@@ -19,47 +21,57 @@ use reqwest::Client;
 use reqwest::header::HeaderMap;
 use reqwest_middleware::ClientBuilder;
 use serde::Deserialize;
+use tonic::transport::Server;
 
 use crate::geo_json_200_response::{Feature, Step};
+use crate::proto::route_forecast_server::RouteForecastServer;
 
-#[tokio::main]
-async fn main() -> Result<(), reqwest::Error> {
-    let command = if let Some(command) = std::env::args().nth(1) {
-        command
-    } else {
-        panic!("No command was specified")
-    };
-    match command.as_str() {
-        // The division was valid
-        "forecast" => handle_forecast_command().await,
-        // The division was invalid
-        "route" => handle_route_command().await,
-        x => println!("No command '{x}' found"),
-    }
+use proto::route_forecast_server::RouteForecast;
 
-    Ok(())
+mod proto {
+    tonic::include_proto!("route_forecast");
+    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+        tonic::include_file_descriptor_set!("route-forecast_binary");
 }
 
-async fn handle_forecast_command() {
-    let lat = if let Some(lat) = std::env::args().nth(2) {
-        lat.parse::<f32>().unwrap()
-    } else {
-        println!("No lat provided, using default for Arendal.");
-        58.4618
-    };
+#[derive(Debug, Default)]
+struct RouteForecastService {}
 
-    let lon = if let Some(lon) = std::env::args().nth(3) {
-        lon.parse::<f32>().unwrap()
-    } else {
-        println!("No long provided, using default for Arendal.");
-        8.7724
-    };
+#[tonic::async_trait]
+impl RouteForecast for RouteForecastService {
+    async fn get_route_with_forecast(
+        &self,
+        request: tonic::Request<proto::RouteWithForecastRequest>,
+    ) -> Result<tonic::Response<proto::RouteWithForecastResponse>, tonic::Status> {
+        print!("Got a request: {:?}", request);
+        let input = request.get_ref();
+        let coords = input
+            .coordinates
+            .iter()
+            .map(|coord| vec![coord.longitude, coord.latitude])
+            .collect();
+        let forecasts = handle_route_command(coords, input.number_of_forecasts).await;
+        let response = proto::RouteWithForecastResponse { forecasts };
+        Ok(tonic::Response::new(response))
+    }
+}
 
-    let pos = Position { lat, lon };
-    let result = get_forecast(pos).await;
-    let forecast = result.unwrap().properties.timeseries;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let addr = ("[::1]:50051").parse()?;
+    let route_forecast_service = RouteForecastService::default();
+    let route_forecast_reflector = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
+        .build_v1()
+        .unwrap();
 
-    println!("{:?}", forecast);
+    Server::builder()
+        .add_service(route_forecast_reflector)
+        .add_service(RouteForecastServer::new(route_forecast_service))
+        .serve(addr)
+        .await?;
+
+    Ok(())
 }
 
 async fn get_forecast(pos: Position) -> Result<MetjsonForecast, Error<CompactGetError>> {
@@ -76,14 +88,16 @@ async fn get_forecast(pos: Position) -> Result<MetjsonForecast, Error<CompactGet
     compact_get(&location_config, pos.lat, pos.lon, None).await
 }
 
-async fn handle_route_command() {
-    // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
-    let coords = vec![vec![7.1808, 62.7403], vec![8.7724, 58.4618]];
-
-    let api_key = if let Some(api_key) = std::env::args().nth(2) {
-        api_key
-    } else {
-        panic!("No api key!")
+async fn handle_route_command(
+    coords: Vec<Vec<f64>>,
+    number_of_forecasts: f64,
+) -> Vec<proto::Forecast> {
+    let api_key = match std::env::var("ORS_API_KEY") {
+        Ok(val) => val,
+        Err(e) => {
+            println!("couldn't find env var ORS_API_KEY: {e}");
+            return vec![];
+        }
     };
 
     let mut route_config = ORSConfiguration::new();
@@ -91,7 +105,7 @@ async fn handle_route_command() {
     let mut headers = HeaderMap::new();
     headers.insert(
         reqwest::header::AUTHORIZATION,
-        reqwest::header::HeaderValue::from_str(&api_key.clone()).unwrap(),
+        reqwest::header::HeaderValue::from_str(&api_key).unwrap(),
     );
 
     let client = Client::builder().default_headers(headers).build().unwrap();
@@ -112,6 +126,7 @@ async fn handle_route_command() {
         key: api_key,
     });
 
+    // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
     let direction_service_options = DirectionsService::new(coords);
 
     let response =
@@ -121,7 +136,7 @@ async fn handle_route_command() {
         Ok(result) => result,
         Err(err) => {
             println!("Route service returned error: {err}");
-            return;
+            return vec![];
         }
     };
 
@@ -146,7 +161,7 @@ async fn handle_route_command() {
         Some(features) => features[0].clone(),
         None => {
             println!("No feature returned by route service");
-            return;
+            return vec![];
         }
     };
 
@@ -163,7 +178,8 @@ async fn handle_route_command() {
         Ok(geo_json_feature) => {
             let steps = &geo_json_feature.properties.segments[0].steps;
             let full_distance = geo_json_feature.properties.segments[0].distance;
-            let sampled_steps = sample_steps_from_feature(steps, full_distance, 3.0);
+            let sampled_steps =
+                sample_steps_from_feature(steps, full_distance, number_of_forecasts);
 
             for s in &sampled_steps {
                 names.push(s.name.clone());
@@ -178,8 +194,9 @@ async fn handle_route_command() {
         }
     };
 
-    dbg!(&names);
     let mut names_index: usize = 0;
+
+    let mut forecasts: Vec<proto::Forecast> = vec![];
 
     for coord in coords {
         let pos = Position {
@@ -188,8 +205,13 @@ async fn handle_route_command() {
             lat: coord[1] as f32,
         };
 
+        let coord = proto::Coordinate {
+            longitude: pos.lon as f64,
+            latitude: pos.lat as f64,
+        };
+
         let result = get_forecast(pos).await;
-        match result {
+        let air_temperature = match result {
             Ok(forecast) => {
                 let current_hour = forecast.properties.timeseries[0].clone();
                 let instant_details = current_hour.data.instant.details;
@@ -198,42 +220,26 @@ async fn handle_route_command() {
                 names_index += 1;
                 match instant_details {
                     None => {
-                        println!("No instant details found");
+                        panic!("No instant details found");
                     }
                     Some(d) => {
-                        println!("Temperature: {:?}", d.air_temperature);
-                        println!("Cloud %: {:?}", d.cloud_area_fraction);
-                        println!("Wind speed: {:?}", d.wind_speed);
-                        println!("Wind speed (gust): {:?}", d.wind_speed_of_gust);
-                    }
-                }
-                let next_1 = current_hour.data.next_1_hours;
-                match next_1 {
-                    None => {
-                        println!("No data found for next hour");
-                    }
-                    Some(n) => {
-                        dbg!(n.summary.symbol_code);
-                        dbg!(n.details.precipitation_amount);
-                    }
-                }
-                let next_6 = current_hour.data.next_6_hours;
-                match next_6 {
-                    None => {
-                        println!("No data found for next 6 hours");
-                    }
-                    Some(n) => {
-                        dbg!(n.summary.symbol_code);
-                        dbg!(n.details.precipitation_amount);
+                        println!("Temperature: {:?}", d.air_temperature.unwrap());
+                        d.air_temperature.unwrap()
                     }
                 }
             }
             Err(err) => {
-                dbg!(err);
+                panic!("{err}");
             }
-        }
+        };
+
+        let current_forecast = proto::Forecast {
+            position: Some(coord),
+            air_temperature,
+        };
+        forecasts.push(current_forecast);
     }
-    println!("{}", metadata);
+    forecasts
 }
 
 fn sample_steps_from_feature(

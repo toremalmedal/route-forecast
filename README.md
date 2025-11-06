@@ -52,7 +52,6 @@ if let Some(ref api_key) = configuration.api_key {
     req_builder = req_builder.header(reqwest::header::AUTHORIZATION, api_key.key.clone())
 }
 ```
-```
 
 ## Generating API
 
@@ -62,3 +61,15 @@ https://github.com/swagger-api/swagger-codegen
 ## Generating serde structs from a json blob:
 
 https://transform.tools/json-to-rust-serde
+
+## Protobuf
+A protobuf compiler must be installed for the build script to work. On ubuntu/debian:
+```{bash}
+apt install protobuf-compiler
+```
+
+grpcurl can be installed for testing the server
+```{bash}
+snap install --edge grpcurl
+```
+```

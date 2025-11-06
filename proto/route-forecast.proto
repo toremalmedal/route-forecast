@@ -1,0 +1,25 @@
+syntax = "proto3";
+package route_forecast;
+
+service RouteForecast{
+  rpc GetRouteWithForecast (RouteWithForecastRequest) returns (RouteWithForecastResponse);
+}
+
+message Coordinate{
+  double longitude = 1;
+  double latitude = 2;
+}
+
+message RouteWithForecastRequest{
+  repeated Coordinate coordinates = 1;
+  double number_of_forecasts = 2;
+}
+
+message Forecast {
+  Coordinate position = 1;
+  double air_temperature = 2;
+}
+
+message RouteWithForecastResponse {
+  repeated Forecast forecasts = 1;
+}
