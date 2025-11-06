@@ -43,8 +43,6 @@ impl RouteForecast for RouteForecastService {
         &self,
         request: tonic::Request<proto::RouteWithForecastRequest>,
     ) -> Result<tonic::Response<proto::RouteWithForecastResponse>, tonic::Status> {
-        print!("Got a request: {:?}", request);
-
         let ors_api_key = match std::env::var("ORS_API_KEY") {
             Ok(val) => val,
             Err(e) => {
@@ -268,30 +266,29 @@ fn sample_steps_from_feature(
 ) -> Vec<Step> {
     let mut sample_steps: Vec<Step> = vec![];
 
-    // Add first and last steps. I think it is safe to assume that weather at start and end of travel is of
-    // interest:
-    sample_steps.push(steps[0].clone());
-    sample_steps.push(steps[steps.len() - 1].clone());
+    // We will add the first and last step after sampling the intermittent steps.
+    if number_of_points >= 2.0 {
+        let step_distance = full_distance / number_of_points - 1.0;
 
-    // If we have set number_of_points to 3, we know that we already have sampled 2 steps.'
-    // This means that we now want to sample one step about halfway along our route;
-    // full_distance / 2
-    assert!(number_of_points >= 2.0);
-    let step_distance = full_distance / number_of_points - 1.0;
+        // We want to sample a step when step_distance has been reached
+        let mut current_distance = 0.0;
 
-    // We want to sample a step when step_distance has been reached
-    let mut current_distance = 0.0;
-
-    for step in steps {
-        current_distance += step.distance;
-        if current_distance >= step_distance {
-            current_distance = 0.0;
-            sample_steps.push(step.clone());
-        }
-        if sample_steps.len() as f64 >= number_of_points {
-            break;
+        for step in steps {
+            current_distance += step.distance;
+            if current_distance >= step_distance {
+                current_distance = 0.0;
+                sample_steps.push(step.clone());
+            }
+            if sample_steps.len() as f64 >= number_of_points - 2.0 {
+                break;
+            }
         }
     }
+    // Add first and last steps. I think it is safe to assume that weather at start and end of travel is of
+    // interest:
+    sample_steps.insert(0, steps[0].clone());
+    sample_steps.push(steps[steps.len() - 1].clone());
+
     sample_steps
 }
 
