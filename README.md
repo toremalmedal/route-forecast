@@ -2,6 +2,12 @@
 
 Shows the weather conditions along a route.
 
+Start the server:
+
+```
+cargo run --bin route-forecast-server
+```
+
 ## Data sources:
 
 ### Weather API:

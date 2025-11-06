@@ -3,6 +3,10 @@ name = "weather-route"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "route-forecast-server"
+path = "src/main.rs"
+
 [dependencies]
 http-cache-reqwest = { version = "0.16"}
 location-forecast-client = { version = "2.0.0", path = "location-forecast-client" }
