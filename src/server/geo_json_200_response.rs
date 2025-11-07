@@ -29,8 +29,8 @@ pub struct Feature {
 #[serde(rename_all = "camelCase")]
 pub struct Properties {
     pub segments: Vec<Segment>,
-    pub extras: Extras,
-    pub warnings: Vec<Warning>,
+    pub extras: Option<Extras>,
+    pub warnings: Option<Vec<Warning>>,
     #[serde(rename = "way_points")]
     pub way_points: Vec<i64>,
     pub summary: Summary2,

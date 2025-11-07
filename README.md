@@ -2,7 +2,15 @@
 
 Shows the weather conditions along a route.
 
-## Running
+## features
+Features are used to split dependencies when building for different targets:
+- server: Used when building and running the server binary
+`cargo build --features server`
+
+- wasm: Used when building the client library with target wasm32-unknown-unknown
+`cargo build --lib --features wasm`
+
+## Starting the server
 
 Requirements:
 - To use Open Route Service you will need a API-key from heigit, their [free plan](https://account.heigit.org/info/plans) allows 2k requests for the routing API. Not bad!
@@ -15,7 +23,77 @@ The server expects these env variables:
 
 You could start the server like this:
 ```
-export ORS_API_KEY="$(pass <your_api_key>)" && export USER_AGENT="mydomain.no/app contact@mydomain.no" cargo run --bin route-forecast-server
+export ORS_API_KEY="$(pass <your_api_key>)" && export USER_AGENT="mydomain.no/app contact@mydomain.no" cargo run --bin route-forecast-server --features server
+```
+
+## Using the client:
+- Using the client on a wasm32 build:
+```{toml}
+# file: Cargo.toml
+weather-route = { version = "0.1.0", path = "<path_to_this_crate>", default-features=false, features = ["wasm"] }
+```
+
+Minimal example yew component using the client (takes the first temp and views it, or shows an error):
+```{rust}
+
+use yew::prelude::*;
+use weather_route::proto::Coordinate;
+use weather_route::wasm::get_route_with_forecast;
+
+#[function_component(DataFetcher)]
+pub fn data_fetcher() -> Html {
+    let data = use_state(|| None::<String>);
+    let error = use_state(|| None::<String>);
+
+    let onclick = {
+        let data = data.clone();
+        let error = error.clone();
+        Callback::from(move |_| {
+            let data = data.clone();
+            let error = error.clone();
+            // Spawn a new asynchronous task for the gRPC call
+            wasm_bindgen_futures::spawn_local(async move {
+                let coords = vec![
+                    Coordinate {
+                        longitude: 8.7721,
+                        latitude: 58.4617,
+                    },
+                    Coordinate {
+                        longitude: 7.1807,
+                        latitude: 62.7403,
+                    },
+                ];
+                let number_of_forecasts = 3.0;
+                let result = get_route_with_forecast(coords, number_of_forecasts).await;
+                match result {
+                    Ok(response) => {
+                        let air_temp = response.into_inner().forecasts[0]
+                            .air_temperature
+                            .to_string();
+                        data.set(Some(air_temp));
+                        error.set(None);
+                    }
+                    Err(e) => {
+                        error.set(Some(format!("Error fetching data: {}", e)));
+                        data.set(None);
+                    }
+                }
+            });
+        })
+    };
+
+    html! {
+        <div>
+            <button {onclick}>{ "Fetch Data" }</button>
+            if let Some(d) = &*data {
+                <p>{ d }</p>
+            }
+            if let Some(e) = &*error {
+                <p style="color: red;">{ e }</p>
+            }
+        </div>
+    }
+}
 ```
 
 ## Data sources:
