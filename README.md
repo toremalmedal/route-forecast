@@ -8,7 +8,7 @@ Features are used to split dependencies when building for different targets:
 `cargo build --features server`
 
 - wasm: Used when building the client library with target wasm32-unknown-unknown
-`cargo build --lib --features wasm`
+`cargo build --lib --features wasm --target wasm32-unknow-unknown`
 
 ## Starting the server
 
@@ -26,14 +26,14 @@ You could start the server like this:
 export ORS_API_KEY="$(pass <your_api_key>)" && export USER_AGENT="mydomain.no/app contact@mydomain.no" cargo run --bin route-forecast-server --features server
 ```
 
-## Using the client:
-- Using the client on a wasm32 build:
+## Using the client (in yew):
+- Using the client on a wasm32 build from a local crate:
 ```{toml}
 # file: Cargo.toml
 weather-route = { version = "0.1.0", path = "<path_to_this_crate>", default-features=false, features = ["wasm"] }
 ```
 
-Minimal example yew component using the client (takes the first temp and views it, or shows an error):
+Minimal example yew component using the client (takes the first temp returned and views it, or shows an error):
 ```{rust}
 
 use yew::prelude::*;
@@ -102,8 +102,7 @@ pub fn data_fetcher() -> Html {
 
 Docs: https://developer.yr.no/doc/
 Swagger: https://api.met.no/weatherapi/locationforecast/2.0/swagger
-
-[Terms of Service](https://developer.yr.no/doc/TermsOfService/):
+Terms of Service: https://developer.yr.no/doc/TermsOfService/
 
 - Identification
 > All requests must (if possible) include an identifying User Agent-string (UA)
@@ -123,7 +122,6 @@ Optionally, use and Origin or Referer header for identification.
 > way that suggests the licensor endorses you or your use.
 
 Traffic:
-
 > Do not ask too often, and don't repeat requests until the time indicated in the Expires response header.
 
 Bandwith:

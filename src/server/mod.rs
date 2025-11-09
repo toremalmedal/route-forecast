@@ -29,8 +29,10 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::proto::route_forecast_server::{RouteForecast, RouteForecastServer};
 use crate::proto::{
     Coordinate, FILE_DESCRIPTOR_SET, Forecast, RouteWithForecastRequest, RouteWithForecastResponse,
+    Step as ResponseStep,
 };
-use geo_json_200_response::{Feature, Step};
+use crate::server::geo_json_200_response::Step;
+use geo_json_200_response::Feature;
 
 #[derive(Debug, Default)]
 struct RouteForecastService {}
@@ -74,9 +76,8 @@ impl RouteForecast for RouteForecastService {
             .iter()
             .map(|coord| vec![coord.longitude, coord.latitude])
             .collect();
-        let forecasts =
+        let response =
             handle_route_command(coords, input.number_of_forecasts, user_agent, ors_api_key).await;
-        let response = RouteWithForecastResponse { forecasts };
         Ok(tonic::Response::new(response))
     }
 }
@@ -162,7 +163,12 @@ async fn handle_route_command(
     number_of_forecasts: f64,
     user_agent: String,
     api_key: String,
-) -> Vec<Forecast> {
+) -> RouteWithForecastResponse {
+    let default_response = RouteWithForecastResponse {
+        forecasts: vec![],
+        steps: vec![],
+        coords: vec![],
+    };
     let route_config = create_ors_client(user_agent.clone(), api_key);
 
     // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
@@ -175,7 +181,7 @@ async fn handle_route_command(
         Ok(result) => result,
         Err(err) => {
             println!("Route service returned error: {err}");
-            return vec![];
+            return default_response;
         }
     };
 
@@ -200,7 +206,7 @@ async fn handle_route_command(
         Some(features) => features[0].clone(),
         None => {
             println!("No feature returned by route service");
-            return vec![];
+            return default_response;
         }
     };
 
@@ -210,12 +216,28 @@ async fn handle_route_command(
     // We want to store some names to add to our weather data, this is not returned by the forecast service:
     let mut names: Vec<String> = vec![];
 
+    let mut response_steps: Vec<ResponseStep> = vec![];
+    let mut response_coords: Vec<Coordinate> = vec![];
+
     // We want positions to use with a weather service. A Feature contains indices
     // (way_points) that points to the index of a vector of coordinates that contains a start and stop
     // coordinate for the feature: We use the start coordinate.
     let coords = match geo_json_feature {
         Ok(geo_json_feature) => {
             let steps = &geo_json_feature.properties.segments[0].steps;
+
+            for s in steps {
+                let new_response_step = ResponseStep {
+                    distance: s.distance,
+                    dration: s.duration,
+                    instruction: s.instruction.clone(),
+                    type_field: s.type_field,
+                    way_points: s.way_points.clone(),
+                    name: s.name.clone(),
+                };
+                response_steps.push(new_response_step);
+            }
+
             let full_distance = geo_json_feature.properties.segments[0].distance;
             let sampled_steps =
                 sample_steps_from_feature(steps, full_distance, number_of_forecasts);
@@ -225,6 +247,12 @@ async fn handle_route_command(
             }
 
             let all_coordinates = geo_json_feature.geometry.coordinates;
+            for c in all_coordinates.clone() {
+                response_coords.push(Coordinate {
+                    longitude: c[0],
+                    latitude: c[1],
+                });
+            }
             find_geometry_from_steps(sampled_steps, all_coordinates)
         }
         Err(err) => {
@@ -257,6 +285,13 @@ async fn handle_route_command(
             Ok(forecast) => {
                 let current_hour = forecast.properties.timeseries[0].clone();
                 let instant_details = current_hour.data.instant.details;
+                let symbol_code = current_hour
+                    .data
+                    .next_1_hours
+                    .unwrap()
+                    .summary
+                    .symbol_code
+                    .to_string();
                 // let time = current_hour.time;
                 names_index += 1;
                 match instant_details {
@@ -267,6 +302,7 @@ async fn handle_route_command(
                         let current_forecast = Forecast {
                             position: Some(coord),
                             air_temperature: d.air_temperature.unwrap(),
+                            symbol_code,
                         };
                         forecasts.push(current_forecast);
                     }
@@ -277,7 +313,11 @@ async fn handle_route_command(
             }
         };
     }
-    forecasts
+    RouteWithForecastResponse {
+        forecasts,
+        steps: response_steps,
+        coords: response_coords,
+    }
 }
 
 fn sample_steps_from_feature(
