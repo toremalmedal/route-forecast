@@ -28,6 +28,19 @@ message Forecast {
   Coordinate position = 1;
   double air_temperature = 2;
   string symbol_code = 3;
+  optional double wind_speed = 4;
+  optional double wind_speed_of_gust = 5;
+  optional ForecastNextHour next_hour = 6;
+  string time = 7;
+}
+
+message ForecastNextHour {
+  optional double air_temperature_min = 1;
+  optional double air_temperature_max = 2;
+  optional double precipitation_amount_min = 3;
+  optional double precipitation_amount_max = 4;
+  optional double probability_of_precipitation = 5;
+
 }
 
 message RouteWithForecastResponse {

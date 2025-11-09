@@ -28,8 +28,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::proto::route_forecast_server::{RouteForecast, RouteForecastServer};
 use crate::proto::{
-    Coordinate, FILE_DESCRIPTOR_SET, Forecast, RouteWithForecastRequest, RouteWithForecastResponse,
-    Step as ResponseStep,
+    self, Coordinate, FILE_DESCRIPTOR_SET, Forecast, ForecastNextHour, RouteWithForecastRequest,
+    RouteWithForecastResponse, Step as ResponseStep,
 };
 use crate::server::geo_json_200_response::Step;
 use geo_json_200_response::Feature;
@@ -261,8 +261,6 @@ async fn handle_route_command(
         }
     };
 
-    let mut names_index: usize = 0;
-
     let mut forecasts: Vec<Forecast> = vec![];
 
     for coord in coords {
@@ -285,24 +283,33 @@ async fn handle_route_command(
             Ok(forecast) => {
                 let current_hour = forecast.properties.timeseries[0].clone();
                 let instant_details = current_hour.data.instant.details;
-                let symbol_code = current_hour
-                    .data
-                    .next_1_hours
-                    .unwrap()
-                    .summary
-                    .symbol_code
-                    .to_string();
-                // let time = current_hour.time;
-                names_index += 1;
+                dbg!(&instant_details);
+                let next_hour = current_hour.data.next_6_hours.unwrap();
+                dbg!(&next_hour);
+                let next_hour_details = next_hour.details;
+                let next_hour_response: proto::ForecastNextHour = ForecastNextHour {
+                    air_temperature_min: next_hour_details.air_temperature_min,
+                    air_temperature_max: next_hour_details.air_temperature_max,
+                    precipitation_amount_min: next_hour_details.precipitation_amount_min,
+                    precipitation_amount_max: next_hour_details.precipitation_amount_max,
+                    probability_of_precipitation: next_hour_details.probability_of_precipitation,
+                };
+                let symbol_code = next_hour.summary.symbol_code.to_string();
+
+                let time = current_hour.time;
                 match instant_details {
                     None => {
                         panic!("No instant details found");
                     }
                     Some(d) => {
                         let current_forecast = Forecast {
+                            time,
                             position: Some(coord),
                             air_temperature: d.air_temperature.unwrap(),
                             symbol_code,
+                            next_hour: Some(next_hour_response),
+                            wind_speed: d.wind_speed,
+                            wind_speed_of_gust: d.wind_speed_of_gust,
                         };
                         forecasts.push(current_forecast);
                     }

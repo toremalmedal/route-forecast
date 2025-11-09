@@ -5,6 +5,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     #[cfg(feature = "server")]
     tonic_prost_build::configure()
+        // To allow for optional fields
+        .protoc_arg("--experimental_allow_proto3_optional")
         .file_descriptor_set_path(build_path.join("route-forecast_binary.bin"))
         .compile_protos(&["proto/route-forecast.proto"], &["proto"])?;
 
