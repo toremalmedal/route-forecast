@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     #[cfg(feature = "wasm")]
     tonic_prost_build::configure()
+        .protoc_arg("--experimental_allow_proto3_optional")
         .build_transport(false)
         .file_descriptor_set_path(build_path.join("route-forecast_binary.bin"))
         .compile_protos(&["proto/route-forecast.proto"], &["proto"])?;

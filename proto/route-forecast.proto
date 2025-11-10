@@ -32,6 +32,7 @@ message Forecast {
   optional double wind_speed_of_gust = 5;
   optional ForecastNextHour next_hour = 6;
   string time = 7;
+  double duration = 8;
 }
 
 message ForecastNextHour {
@@ -40,6 +41,7 @@ message ForecastNextHour {
   optional double precipitation_amount_min = 3;
   optional double precipitation_amount_max = 4;
   optional double probability_of_precipitation = 5;
+  optional double precipitation_amount = 6;
 
 }
 

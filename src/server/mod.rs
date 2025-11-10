@@ -222,7 +222,7 @@ async fn handle_route_command(
     // We want positions to use with a weather service. A Feature contains indices
     // (way_points) that points to the index of a vector of coordinates that contains a start and stop
     // coordinate for the feature: We use the start coordinate.
-    let coords = match geo_json_feature {
+    let coords_with_duration = match geo_json_feature {
         Ok(geo_json_feature) => {
             let steps = &geo_json_feature.properties.segments[0].steps;
 
@@ -263,7 +263,7 @@ async fn handle_route_command(
 
     let mut forecasts: Vec<Forecast> = vec![];
 
-    for coord in coords {
+    for coord in coords_with_duration {
         let pos = Position {
             // The spec for locationforecast uses f32s as long, lats. coords are f64
             // should be truncated to max 4 dicits of precision because of ToS
@@ -273,6 +273,8 @@ async fn handle_route_command(
         dbg!(&pos.lon);
         dbg!(&pos.lat);
 
+        let duration = coord[2];
+
         let coord = Coordinate {
             longitude: pos.lon as f64,
             latitude: pos.lat as f64,
@@ -281,17 +283,18 @@ async fn handle_route_command(
         let result = get_forecast(pos, user_agent.clone()).await;
         match result {
             Ok(forecast) => {
-                let current_hour = forecast.properties.timeseries[0].clone();
+                let duration_int = (duration / 3600.0) as usize;
+                dbg!(&duration_int, duration / 3600.0);
+                let current_hour = forecast.properties.timeseries[duration_int].clone();
                 let instant_details = current_hour.data.instant.details;
-                dbg!(&instant_details);
-                let next_hour = current_hour.data.next_6_hours.unwrap();
-                dbg!(&next_hour);
+                let next_hour = current_hour.data.next_1_hours.unwrap();
                 let next_hour_details = next_hour.details;
                 let next_hour_response: proto::ForecastNextHour = ForecastNextHour {
                     air_temperature_min: next_hour_details.air_temperature_min,
                     air_temperature_max: next_hour_details.air_temperature_max,
                     precipitation_amount_min: next_hour_details.precipitation_amount_min,
                     precipitation_amount_max: next_hour_details.precipitation_amount_max,
+                    precipitation_amount: next_hour_details.precipitation_amount,
                     probability_of_precipitation: next_hour_details.probability_of_precipitation,
                 };
                 let symbol_code = next_hour.summary.symbol_code.to_string();
@@ -310,6 +313,7 @@ async fn handle_route_command(
                             next_hour: Some(next_hour_response),
                             wind_speed: d.wind_speed,
                             wind_speed_of_gust: d.wind_speed_of_gust,
+                            duration,
                         };
                         forecasts.push(current_forecast);
                     }
@@ -333,6 +337,7 @@ fn sample_steps_from_feature(
     number_of_points: f64,
 ) -> Vec<Step> {
     let mut sample_steps: Vec<Step> = vec![];
+    let mut current_duration = 0.0;
 
     // We will add the first and last step after sampling the intermittent steps.
     if number_of_points >= 2.0 {
@@ -342,11 +347,16 @@ fn sample_steps_from_feature(
         let mut current_distance = 0.0;
 
         for step in steps {
-            current_distance += step.distance;
             if current_distance >= step_distance {
                 current_distance = 0.0;
-                sample_steps.push(step.clone());
+
+                let mut sampled_step = step.clone();
+                sampled_step.duration = current_duration;
+
+                sample_steps.push(sampled_step);
             }
+            current_distance += step.distance;
+            current_duration += step.duration;
             if sample_steps.len() as f64 >= number_of_points - 2.0 {
                 break;
             }
@@ -355,7 +365,9 @@ fn sample_steps_from_feature(
     // Add first and last steps. I think it is safe to assume that weather at start and end of travel is of
     // interest:
     sample_steps.insert(0, steps[0].clone());
-    sample_steps.push(steps[steps.len() - 1].clone());
+    let mut last_step = steps[steps.len() - 1].clone();
+    last_step.duration = current_duration;
+    sample_steps.push(last_step);
 
     sample_steps
 }
@@ -366,8 +378,11 @@ fn find_geometry_from_steps(steps: Vec<Step>, coordinates: Vec<Vec<f64>>) -> Vec
     // The way_point 'index' from steps must be converted to a usize to be used for indexing
     for step in steps {
         let idx_i64: i64 = step.way_points[0];
+        let duration = step.duration;
         if let Ok(idx) = usize::try_from(idx_i64) {
-            sampled_coords.push(coordinates[idx].clone());
+            let mut coordinate_with_duration = coordinates[idx].clone();
+            coordinate_with_duration.push(duration);
+            sampled_coords.push(coordinate_with_duration);
         }
     }
     sampled_coords
