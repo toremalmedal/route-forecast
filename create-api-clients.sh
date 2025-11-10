@@ -27,3 +27,8 @@ echo "$(jq 'del(.paths["/pois"])' ors-swagger.json)" >ors-swagger-edit.json
 docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate -i /local/ors-swagger-edit.json -g rust -o /local/ors-client --package-name=ors-client --additional-properties=supportMiddleware=true
 cargo add --path ./ors-client
 rm ors-swagger.json ors-swagger-edit.json
+
+curl https://ws.geonorge.no/stedsnavn/v1/openapi.json | jq >>stedsnavn.json
+docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate -i /local/stedsnavn.json -g rust -o /local/stedsnavn-client --package-name=stedsnavn-client --additional-properties=supportMiddleware=true
+cargo add --path ./stedsnavn-client
+rm stedsnavn.json

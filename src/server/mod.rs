@@ -16,20 +16,26 @@ use ors_client::apis::configuration::Configuration as ORSConfiguration;
 use ors_client::apis::directions_service_api::get_geo_json_route;
 use ors_client::models::DirectionsService;
 
+use stedsnavn_client::apis::Error as PlaceError;
+use stedsnavn_client::apis::configuration::Configuration as PlaceConfiguration;
+use stedsnavn_client::apis::default_api::StedGetError;
+use stedsnavn_client::apis::default_api::sted_get;
+
 // The spec we generate our ors_client from lacks the response signature of features from GeoJSON:
 mod geo_json_200_response;
 use reqwest::header::HeaderMap;
 use reqwest::{Client, Method};
 use reqwest_middleware::ClientBuilder;
 use serde::Deserialize;
+use stedsnavn_client::models::ReturSted;
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::proto::route_forecast_server::{RouteForecast, RouteForecastServer};
 use crate::proto::{
-    self, Coordinate, FILE_DESCRIPTOR_SET, Forecast, ForecastNextHour, RouteWithForecastRequest,
-    RouteWithForecastResponse, Step as ResponseStep,
+    self, Coordinate, FILE_DESCRIPTOR_SET, Forecast, ForecastNextHour, PlaceRequest, PlaceResponse,
+    RouteWithForecastRequest, RouteWithForecastResponse, Step as ResponseStep,
 };
 use crate::server::geo_json_200_response::Step;
 use geo_json_200_response::Feature;
@@ -80,6 +86,47 @@ impl RouteForecast for RouteForecastService {
             handle_route_command(coords, input.number_of_forecasts, user_agent, ors_api_key).await;
         Ok(tonic::Response::new(response))
     }
+
+    async fn get_place(
+        &self,
+        request: tonic::Request<PlaceRequest>,
+    ) -> Result<tonic::Response<PlaceResponse>, tonic::Status> {
+        let input = request.get_ref();
+        let search = input.name.clone();
+
+        let user_agent = match std::env::var("USER_AGENT") {
+            Ok(val) => val,
+            Err(e) => {
+                panic!("couldn't find env var USER_AGENT: {e}");
+            }
+        };
+        let response = get_place_request(search, user_agent).await;
+        match response {
+            Ok(r) => {
+                dbg!(&r);
+                if r.metadata.unwrap().totalt_antall_treff.unwrap() > 0 {
+                    let first_name = r.navn.unwrap()[0].clone();
+                    let first_place = first_name.stedsnavn.unwrap()[0].clone();
+                    let first_point = first_name.representasjonspunkt.unwrap();
+                    let place = PlaceResponse {
+                        name: first_place.skrivemte.unwrap(),
+                        point: Some(Coordinate {
+                            latitude: first_point.nord.unwrap(),
+
+                            longitude: first_point.st.unwrap(),
+                        }),
+                    };
+                    Ok(tonic::Response::new(place))
+                } else {
+                    Err(tonic::Status::not_found("No place found"))
+                }
+            }
+            Err(e) => {
+                dbg!(e);
+                Err(tonic::Status::internal("Error from 'stedsnavn' API"))
+            }
+        }
+    }
 }
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -105,6 +152,44 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+async fn get_place_request(
+    search: String,
+    user_agent: String,
+) -> Result<ReturSted, PlaceError<StedGetError>> {
+    let place_config = create_place_config(user_agent);
+    dbg!(&search);
+    sted_get(
+        &place_config,
+        Some(&search),
+        None,    //fuzzy,
+        None,    //fnr,
+        None,    //knr,
+        None,    //kommunenavn,
+        None,    //fylkesnavn,
+        None,    //stedsnummer,
+        None,    //Some(vec!["By".to_string()]), //navneobjekttype,
+        None,    //utkoordsys,
+        Some(1), //treff_per_side,
+        Some(1), //side,
+        None,    //filtrer,
+    )
+    .await
+}
+
+fn create_place_config(user_agent: String) -> PlaceConfiguration {
+    let mut place_config = PlaceConfiguration::new();
+    let middleware_client = ClientBuilder::new(Client::new())
+        .with(Cache(HttpCache {
+            mode: CacheMode::Default,
+            manager: CACacheManager::new("./cache/".into(), false),
+            options: HttpCacheOptions::default(),
+        }))
+        .build();
+    place_config.user_agent = Some(user_agent);
+    place_config.client = middleware_client;
+    place_config
 }
 
 async fn get_forecast(

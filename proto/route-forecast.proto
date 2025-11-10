@@ -3,6 +3,16 @@ package route_forecast;
 
 service RouteForecast{
   rpc GetRouteWithForecast (RouteWithForecastRequest) returns (RouteWithForecastResponse);
+  rpc GetPlace (PlaceRequest) returns (PlaceResponse);
+}
+
+message PlaceRequest{
+  string name = 1;
+}
+
+message PlaceResponse{
+  Coordinate point = 1;
+  string name = 2;
 }
 
 message Step{

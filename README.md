@@ -145,6 +145,10 @@ if let Some(ref api_key) = configuration.api_key {
 }
 ```
 
+### Name lookup:
+
+https://ws.geonorge.no/stedsnavn/v1/#/default/get_navneobjekttyper
+
 ## Tools
 
 ### Generating client APIs from OpenAPI/swagger specs
