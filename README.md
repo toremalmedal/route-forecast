@@ -20,6 +20,7 @@ Requirements:
 The server expects these env variables:
 - ORS_API_KEY - the api key to pass in the authorization header for ORS requests
 - USER_AGENT - the user agent used for both ORS and locationforecast requests
+- SERVER_URL - the url the client should connect to
 
 You could start the server like this:
 ```

@@ -34,8 +34,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::proto::route_forecast_server::{RouteForecast, RouteForecastServer};
 use crate::proto::{
-    self, Coordinate, FILE_DESCRIPTOR_SET, Forecast, ForecastNextHour, PlaceRequest, PlaceResponse,
-    RouteWithForecastRequest, RouteWithForecastResponse, Step as ResponseStep,
+    self, Coordinate, FILE_DESCRIPTOR_SET, Forecast, ForecastNextHour, Place, PlaceRequest,
+    PlaceResponse, RouteWithForecastRequest, RouteWithForecastResponse, Step as ResponseStep,
 };
 use crate::server::geo_json_200_response::Step;
 use geo_json_200_response::Feature;
@@ -71,7 +71,7 @@ impl RouteForecast for RouteForecastService {
             ));
         }
 
-        if input.number_of_forecasts > 10.0 {
+        if input.number_of_forecasts > 20.0 {
             return Err(tonic::Status::invalid_argument(
                 "number_of_forecasts should be between 2 and 10",
             ));
@@ -103,20 +103,27 @@ impl RouteForecast for RouteForecastService {
         let response = get_place_request(search, user_agent).await;
         match response {
             Ok(r) => {
-                dbg!(&r);
                 if r.metadata.unwrap().totalt_antall_treff.unwrap() > 0 {
-                    let first_name = r.navn.unwrap()[0].clone();
-                    let first_place = first_name.stedsnavn.unwrap()[0].clone();
-                    let first_point = first_name.representasjonspunkt.unwrap();
-                    let place = PlaceResponse {
-                        name: first_place.skrivemte.unwrap(),
-                        point: Some(Coordinate {
-                            latitude: first_point.nord.unwrap(),
+                    let places = r
+                        .navn
+                        .unwrap()
+                        .iter()
+                        .map(|n| {
+                            let first_place = n.stedsnavn.clone().unwrap()[0].clone();
+                            let first_point = n.representasjonspunkt.clone().unwrap();
+                            let place = Place {
+                                name: first_place.skrivemte.unwrap(),
+                                point: Some(Coordinate {
+                                    latitude: first_point.nord.unwrap(),
 
-                            longitude: first_point.st.unwrap(),
-                        }),
-                    };
-                    Ok(tonic::Response::new(place))
+                                    longitude: first_point.st.unwrap(),
+                                }),
+                            };
+                            dbg!(&place);
+                            place
+                        })
+                        .collect();
+                    Ok(tonic::Response::new(proto::PlaceResponse { place: places }))
                 } else {
                     Err(tonic::Status::not_found("No place found"))
                 }
@@ -130,7 +137,7 @@ impl RouteForecast for RouteForecastService {
 }
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = ("[::1]:50051").parse()?;
+    let addr = ("0.0.0.0:50051").parse()?;
     let route_forecast_service = RouteForecastService::default();
     let route_forecast_reflector = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
@@ -142,14 +149,21 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods([Method::GET])
         .allow_origin(Any);
 
-    Server::builder()
+    eprintln!("Starting server at {}", addr);
+
+    let server = Server::builder()
         .accept_http1(true)
         .layer(cors)
         .layer(GrpcWebLayer::new())
         .add_service(route_forecast_reflector)
         .add_service(RouteForecastServer::new(route_forecast_service))
         .serve(addr)
-        .await?;
+        .await;
+
+    match server {
+        Ok(_) => eprintln!("Server started at {}", addr),
+        Err(e) => eprintln!("Server could not start, got error: {}", e),
+    }
 
     Ok(())
 }
@@ -163,17 +177,17 @@ async fn get_place_request(
     sted_get(
         &place_config,
         Some(&search),
-        None,    //fuzzy,
-        None,    //fnr,
-        None,    //knr,
-        None,    //kommunenavn,
-        None,    //fylkesnavn,
-        None,    //stedsnummer,
-        None,    //Some(vec!["By".to_string()]), //navneobjekttype,
-        None,    //utkoordsys,
-        Some(1), //treff_per_side,
-        Some(1), //side,
-        None,    //filtrer,
+        Some(true), //fuzzy,
+        None,       //fnr,
+        None,       //knr,
+        None,       //kommunenavn,
+        None,       //fylkesnavn,
+        None,       //stedsnummer,
+        None,       //Some(vec!["By".to_string()]), //navneobjekttype,
+        None,       //utkoordsys,
+        Some(10),   //treff_per_side,
+        Some(1),    //side,
+        None,       //filtrer,
     )
     .await
 }
@@ -324,8 +338,9 @@ async fn handle_route_command(
             }
 
             let full_distance = geo_json_feature.properties.segments[0].distance;
+            let full_duration = geo_json_feature.properties.segments[0].duration;
             let sampled_steps =
-                sample_steps_from_feature(steps, full_distance, number_of_forecasts);
+                sample_steps_from_feature(steps, full_distance, number_of_forecasts, full_duration);
 
             for s in &sampled_steps {
                 names.push(s.name.clone());
@@ -355,8 +370,6 @@ async fn handle_route_command(
             lon: (coord[0] as f32).mul(10_000.0).round().div(10_000.0),
             lat: (coord[1] as f32).mul(10_000.0).round().div(10_000.0),
         };
-        dbg!(&pos.lon);
-        dbg!(&pos.lat);
 
         let duration = coord[2];
 
@@ -369,7 +382,6 @@ async fn handle_route_command(
         match result {
             Ok(forecast) => {
                 let duration_int = (duration / 3600.0) as usize;
-                dbg!(&duration_int, duration / 3600.0);
                 let current_hour = forecast.properties.timeseries[duration_int].clone();
                 let instant_details = current_hour.data.instant.details;
                 let next_hour = current_hour.data.next_1_hours.unwrap();
@@ -420,6 +432,7 @@ fn sample_steps_from_feature(
     steps: &Vec<Step>,
     full_distance: f64,
     number_of_points: f64,
+    full_duration: f64,
 ) -> Vec<Step> {
     let mut sample_steps: Vec<Step> = vec![];
     let mut current_duration = 0.0;
@@ -451,7 +464,7 @@ fn sample_steps_from_feature(
     // interest:
     sample_steps.insert(0, steps[0].clone());
     let mut last_step = steps[steps.len() - 1].clone();
-    last_step.duration = current_duration;
+    last_step.duration = full_duration;
     sample_steps.push(last_step);
 
     sample_steps

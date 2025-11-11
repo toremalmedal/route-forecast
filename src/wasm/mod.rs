@@ -2,17 +2,16 @@ use super::proto::route_forecast_client::RouteForecastClient;
 use super::proto::{
     Coordinate, PlaceRequest, PlaceResponse, RouteWithForecastRequest, RouteWithForecastResponse,
 };
-use tonic_web_wasm_client::Client;
-
 use std::error::Error;
+use tonic_web_wasm_client::Client;
 
 #[cfg(feature = "wasm")]
 pub async fn get_route_with_forecast(
     coords: Vec<Coordinate>,
     number_of_forecasts: f64,
 ) -> Result<tonic::Response<RouteWithForecastResponse>, Box<dyn Error>> {
-    let url = String::from("http://[::1]:50051");
-    let wasm_client = Client::new(url);
+    let server_url = std::env::var("SERVER_URL")?;
+    let wasm_client = Client::new(server_url);
     let mut client = RouteForecastClient::new(wasm_client);
     let req = RouteWithForecastRequest {
         number_of_forecasts,
@@ -24,8 +23,8 @@ pub async fn get_route_with_forecast(
 }
 
 pub async fn get_place(name: String) -> Result<tonic::Response<PlaceResponse>, Box<dyn Error>> {
-    let url = String::from("http://[::1]:50051");
-    let wasm_client = Client::new(url);
+    let server_url = std::env::var("SERVER_URL")?;
+    let wasm_client = Client::new(server_url);
     let mut client = RouteForecastClient::new(wasm_client);
     let req = PlaceRequest { name };
     let request = tonic::Request::new(req);

@@ -11,6 +11,10 @@ message PlaceRequest{
 }
 
 message PlaceResponse{
+  repeated Place place = 1;
+}
+
+message Place{
   Coordinate point = 1;
   string name = 2;
 }
