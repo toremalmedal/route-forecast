@@ -137,7 +137,13 @@ impl RouteForecast for RouteForecastService {
 }
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = ("0.0.0.0:50051").parse()?;
+    let server_url = match std::env::var("GRPC_SERVER_URL") {
+        Ok(url) => url,
+        Err(e) => {
+            panic!("Could not retrieve runtime env variable GRPC_SERVER_URL, got error:{e}");
+        }
+    };
+    let addr = server_url.parse()?;
     let route_forecast_service = RouteForecastService::default();
     let route_forecast_reflector = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
