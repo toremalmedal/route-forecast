@@ -11,28 +11,28 @@ Features are used to split dependencies when building for different targets:
 - wasm: Used when building the client library with target wasm32-unknown-unknown
 `cargo build --lib --features wasm --target wasm32-unknow-unknown`
 
-## Development
+## Build
 
-Requirements:
-
-- A protobuf compiler must be installed for the build script to work. On ubuntu/debian:
+Note: A protobuf compiler must be installed for the build script to work. On ubuntu/debian:
 ```{bash}
 apt install protobuf-compiler
 ```
 
-- An API-key from heigit to use Open Route Service. Their [free plan](https://account.heigit.org/info/plans) allows 2k requests for the routing API. 
-
-- Setting an User Agent to use location-forecast. ToS says you must identify your application.
-
-- The server expects these env variables:
-- ORS_API_KEY - the api key to pass in the authorization header for ORS requests
-- USER_AGENT - the user agent used for both ORS and locationforecast requests
-- GRCP_SERVER_URL - the url for the GRCP server
-
-- Build it 
+Build API clients and project:
 ```
 ./create-api-clients.sh && cargo build --features server
 ```
+
+## Run
+
+Requirements: 
+- An API-key from heigit to use Open Route Service. Their [free plan](https://account.heigit.org/info/plans) allows 2k requests for the routing API. 
+- Setting an User Agent to use location-forecast. ToS says you must identify your application.
+
+Run time env variables:
+- ORS_API_KEY - the api key to pass in the authorization header for ORS requests
+- USER_AGENT - required for location-forecast, but used for all clients
+- GRCP_SERVER_URL - the url for the gRCP server
 
 - Start the server on your host:
 ```
@@ -98,10 +98,10 @@ grpcurl -plaintext -d '{"coordinates": [{"longitude": 10.7335,"latitude": 59.911
 ```
 
 ## Using the web client (in yew):
-Env variables at compile time:
+Compile time env variables:
 - GRCP_SERVER_URL - the server url ("http://<my-service>:port") for the web grpcs client to connect to
 
-- Using the client for a wasm32 target build (note only 'wasm' feature is enabled):
+Using the client for a wasm32 target build (note only 'wasm' feature is enabled):
 ```{toml}
 # file: Cargo.toml
 weather-route = { version = "0.1.0", path = "<path_to_this_crate>", default-features=false, features = ["wasm"] }
