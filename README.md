@@ -106,7 +106,7 @@ Docs: https://developer.yr.no/doc/
 Swagger: https://api.met.no/weatherapi/locationforecast/2.0/swagger
 Terms of Service: https://developer.yr.no/doc/TermsOfService/
 
-- Identification
+- Identification 
 > All requests must (if possible) include an identifying User Agent-string (UA)
 > in the request with the application/domain name, optionally version number.
 > You should also include a company email address or a link to the company
