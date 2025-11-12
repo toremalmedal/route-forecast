@@ -1,0 +1,12 @@
+# RouteRequestCustomModelGeoJsonPolygonGeometry
+
+## Properties
+
+Name | Type | Description | Notes
+------------ | ------------- | ------------- | -------------
+**r#type** | Option<**String**> | GeoJSON type | [optional][default to Polygon]
+**coordinates** | Option<[**Vec<Vec<Vec<f64>>>**](Vec.md)> |  | [optional]
+
+[[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
+
+

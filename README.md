@@ -1,6 +1,7 @@
 # Weather route
 
-Shows the weather conditions along a route.
+Creates a gRPC server that returns a route with weather forecasts, and an
+endpoint that returns names and coords for places in Norway.
 
 ## features
 Features are used to split dependencies when building for different targets:
