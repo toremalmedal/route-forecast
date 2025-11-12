@@ -1,6 +1,7 @@
 # Weather route
 
-Shows the weather conditions along a route.
+Creates a gRPC server that returns a route between two or more coordinates with weather forecasts. Also has an
+endpoint that returns names and coords for places in Norway. Uses https://api.met.no/, openrouteservice.org/ and https://api.kartverket.no/stedsnavn/v1/.
 
 ## features
 Features are used to split dependencies when building for different targets:
