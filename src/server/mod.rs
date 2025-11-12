@@ -28,7 +28,7 @@ use reqwest::{Client, Method};
 use reqwest_middleware::ClientBuilder;
 use serde::Deserialize;
 use stedsnavn_client::models::ReturSted;
-use tonic::transport::Server;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -143,6 +143,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             panic!("Could not retrieve runtime env variable GRPC_SERVER_URL, got error:{e}");
         }
     };
+
     let addr = server_url.parse()?;
     let route_forecast_service = RouteForecastService::default();
     let route_forecast_reflector = tonic_reflection::server::Builder::configure()
@@ -155,10 +156,19 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods([Method::GET])
         .allow_origin(Any);
 
+    let cert_path = std::env::var("CERT_PATH").unwrap();
+    let key_path = std::env::var("KEY_PATH").unwrap();
+
+    let cert = std::fs::read_to_string(cert_path)?;
+    let key = std::fs::read_to_string(key_path)?;
+
+    let tls_config = ServerTlsConfig::new().identity(Identity::from_pem(&cert, &key));
+
     eprintln!("Starting server at {}", addr);
 
     let server = Server::builder()
         .accept_http1(true)
+        .tls_config(tls_config)?
         .layer(cors)
         .layer(GrpcWebLayer::new())
         .add_service(route_forecast_reflector)
