@@ -14,22 +14,19 @@ Features are used to split dependencies when building for different targets:
 
 Requirements:
 
-- This project expects that api clients have been generated.
-`./create-api-clients.sh`
-
-- a protobuf compiler must be installed for the build script to work. On ubuntu/debian:
+- A protobuf compiler must be installed for the build script to work. On ubuntu/debian:
 ```{bash}
 apt install protobuf-compiler
 ```
 
-- To use Open Route Service you will need an API-key from heigit, their [free plan](https://account.heigit.org/info/plans) allows 2k requests for the routing API. 
+- An API-key from heigit to use Open Route Service. Their [free plan](https://account.heigit.org/info/plans) allows 2k requests for the routing API. 
 
-- To use location-forecast you must identify your application using an user-agent.
+- Setting an User Agent to use location-forecast. ToS says you must identify your application.
 
 - The server expects these env variables:
 - ORS_API_KEY - the api key to pass in the authorization header for ORS requests
 - USER_AGENT - the user agent used for both ORS and locationforecast requests
-- GRCP_SERVER_URL - the url the client should connect to
+- GRCP_SERVER_URL - the url for the GRCP server
 
 - Build it 
 ```
@@ -100,7 +97,6 @@ grpcurl -plaintext -d '{"coordinates": [{"longitude": 10.7335,"latitude": 59.911
 ```
 
 ## Using the web client (in yew):
-
 Env variables at compile time:
 - GRCP_SERVER_URL - the server url ("http://<my-service>:port") for the web grpcs client to connect to
 
@@ -110,7 +106,18 @@ Env variables at compile time:
 weather-route = { version = "0.1.0", path = "<path_to_this_crate>", default-features=false, features = ["wasm"] }
 ```
 
-# TODO: Minimal yew project with example using the client (takes the first temp returned and views it, or shows an error):
+<! --TODO: Minimal yew project with example using the client (takes the first temp returned and views it, or shows an error): -->
+
+
+## Tools
+
+### Generating client APIs from OpenAPI/swagger specs
+
+https://github.com/OpenAPITools/openapi-generator
+https://github.com/swagger-api/swagger-codegen
+
+### Generating serde structs from a json blob:
+https://transform.tools/json-to-rust-serde
 
 ## Data sources:
 
@@ -129,10 +136,7 @@ Terms of Service: https://developer.yr.no/doc/TermsOfService/
 > website where we can find contact information. If we cannot contact you in
 > case of problems, you risk being blocked without warning.":
 
-Optionally, use and Origin or Referer header for identification.
-
 - Attribution:
-
 > You must give appropriate credit, provide a link to the license, and indicate
 > if changes were made. You may do so in any reasonable manner, but not in any
 > way that suggests the licensor endorses you or your use.
@@ -148,21 +152,16 @@ Bandwith:
 
 Open Street Map
 
-ToS: https://openrouteservice.org/restrictions/
-Free plan: https://account.heigit.org/info/plans
+Docs: https://openrouteservice.org/dev/#/api-docs/v2/directions
 
-Note: When generating the client using openapi-generator, authorization does not seem to be implemented properly.
+Terms of Service: https://openrouteservice.org/restrictions/
 
-### Name lookup:
+Free heigit plan: https://account.heigit.org/info/plans
 
-https://ws.geonorge.no/stedsnavn/v1/#/default/get_navneobjekttyper
 
-## Tools
+### Name lookup, coords from name:
 
-### Generating client APIs from OpenAPI/swagger specs
+Docs: https://api.kartverket.no/stedsnavn/v1/
 
-https://github.com/OpenAPITools/openapi-generator
-https://github.com/swagger-api/swagger-codegen
+OpenApi: https://api.kartverket.no/stedsnavn/v1/openapi.json
 
-### Generating serde structs from a json blob:
-https://transform.tools/json-to-rust-serde
