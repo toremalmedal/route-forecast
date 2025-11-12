@@ -31,6 +31,11 @@ apt install protobuf-compiler
 - USER_AGENT - the user agent used for both ORS and locationforecast requests
 - GRCP_SERVER_URL - the url the client should connect to
 
+- Build it 
+```
+./create-api-clients.sh && cargo build --features server
+```
+
 - Start the server on your host:
 ```
 export ORS_API_KEY="$(pass <your_api_key>)" && \
