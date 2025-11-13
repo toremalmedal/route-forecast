@@ -28,7 +28,6 @@ Build API clients and project:
 Requirements: 
 - An API-key from heigit to use Open Route Service. Their [free plan](https://account.heigit.org/info/plans) allows 2k requests for the routing API. 
 - Setting an User Agent to use location-forecast. ToS says you must identify your application.
-
 Run time env variables:
 - ORS_API_KEY - the api key to pass in the authorization header for ORS requests
 - USER_AGENT - required for location-forecast, but used for all clients
@@ -36,13 +35,20 @@ Run time env variables:
 - CERT_PATH - path for certificate
 - KEY_PATH - path for private key
 
+- Generate self signed certificate for localhost:
+
+```{bash}
+mkdir -p ./certs/local
+openssl req -x509 -new -newkey rsa:4096 -nodes -keyout ./certs/local/key.pem -out ./certs/local/cert.pem -days 365 -subj "/CN=localhost" -addext "subjectAltName = DNS:localhost"
+```
+
 - Start the server on your host:
 ```
 export ORS_API_KEY="$(pass <your_api_key>)" && \
 export USER_AGENT="mydomain.no/app contact@mydomain.no" && \
 export GRPC_SERVER_URL="[::1]:50051" && \
-export CERT_PATH="./path/to/cert.pem" && \
-export KEY_PATH="./path/to/key.pem" && \
+export CERT_PATH="./certs/local/cert.pem" && \
+export KEY_PATH="./certs/local/cert.pem" && \
 cargo run --bin route-forecast-server --features server
 ```
 
@@ -53,10 +59,13 @@ docker build . -t route-api
 docker run -e ORS_API_KEY="$(pass ors-api-key)" -e USER_AGENT="mydomain.no/app contact@mydomain.no" -e GRPC_SERVER_URL="0.0.0.0:50051" -e CERT_PATH="/path/to/cer.pem" -e KEY_PATH="/path/to/key.pem" -p 50051:50051 --name route-api -t route-api:latest
 ```
 
-- Test connection with grpcurl:
+- Provide grpcurl the generated cert and test reflection server and method:
 
 ```{bash}
-grpcurl -d '{"coordinates": [{"longitude": 10.7335,"latitude": 59.9119},{"longitude": 10.7413, "latitude": 59.921}], "number_of_forecasts": 3}' '[::1]:50051' route_forecast.RouteForecast.GetRouteWithForecast
+$ grpcurl -cacert ./certs/local/cert.pem 'localhost:50051' list
+grpc.reflection.v1.ServerReflection
+route_forecast.RouteForecast
+$ grpcurl -cacert ./certs/local/cert.pem 'localhost:50051' list  -d '{"coordinates": [{"longitude": 10.7335,"latitude": 59.9119},{"longitude": 10.7413, "latitude": 59.921}], "number_of_forecasts": 3}' '[::1]:50051' route_forecast.RouteForecast.GetRouteWithForecast
 {
   "forecasts": [
     {
@@ -169,4 +178,7 @@ Free heigit plan: https://account.heigit.org/info/plans
 Docs: https://api.kartverket.no/stedsnavn/v1/
 
 OpenApi: https://api.kartverket.no/stedsnavn/v1/openapi.json
+
+
+## Testing
 
