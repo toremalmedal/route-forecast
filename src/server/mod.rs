@@ -7,19 +7,20 @@ use core::panic;
 use std::ops::{Div, Mul};
 
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
+
 use location_forecast_client::apis::Error;
 use location_forecast_client::apis::configuration::Configuration as LocationForecastConfiguration;
-use location_forecast_client::apis::data_api::{CompactGetError, compact_get};
+use location_forecast_client::apis::data_api::{CompactGetError, DataApi, DataApiClient};
 use location_forecast_client::models::MetjsonForecast;
 
 use ors_client::apis::configuration::Configuration as ORSConfiguration;
-use ors_client::apis::directions_service_api::get_geo_json_route;
+use ors_client::apis::directions_service_api::{DirectionsServiceApi, DirectionsServiceApiClient};
 use ors_client::models::DirectionsService;
 
 use stedsnavn_client::apis::Error as PlaceError;
 use stedsnavn_client::apis::configuration::Configuration as PlaceConfiguration;
 use stedsnavn_client::apis::default_api::StedGetError;
-use stedsnavn_client::apis::default_api::sted_get;
+use stedsnavn_client::apis::default_api::{DefaultApi, DefaultApiClient as PlaceApiClient};
 
 // The spec we generate our ors_client from lacks the response signature of features from GeoJSON:
 mod geo_json_200_response;
@@ -209,23 +210,23 @@ async fn get_place_request(
     user_agent: String,
 ) -> Result<ReturSted, PlaceError<StedGetError>> {
     let place_config = create_place_config(user_agent);
-    dbg!(&search);
-    sted_get(
-        &place_config,
-        Some(&search),
-        Some(true), //fuzzy,
-        None,       //fnr,
-        None,       //knr,
-        None,       //kommunenavn,
-        None,       //fylkesnavn,
-        None,       //stedsnummer,
-        None,       //Some(vec!["By".to_string()]), //navneobjekttype,
-        None,       //utkoordsys,
-        Some(10),   //treff_per_side,
-        Some(1),    //side,
-        None,       //filtrer,
-    )
-    .await
+    let place_api_client = PlaceApiClient::new(place_config.into());
+    place_api_client
+        .sted_get(
+            Some(&search),
+            Some(true), //fuzzy,
+            None,       //fnr,
+            None,       //knr,
+            None,       //kommunenavn,
+            None,       //fylkesnavn,
+            None,       //stedsnummer,
+            None,       //Some(vec!["By".to_string()]), //navneobjekttype,
+            None,       //utkoordsys,
+            Some(10),   //treff_per_side,
+            Some(1),    //side,
+            None,       //filtrer,
+        )
+        .await
 }
 
 fn create_place_config(user_agent: String) -> PlaceConfiguration {
@@ -247,7 +248,8 @@ async fn get_forecast(
     user_agent: String,
 ) -> Result<MetjsonForecast, Error<CompactGetError>> {
     let location_config = create_forecast_client(user_agent);
-    compact_get(&location_config, pos.lat, pos.lon, None).await
+    let data_api_client = DataApiClient::new(location_config.into());
+    data_api_client.compact_get(pos.lat, pos.lon, None).await
 }
 
 fn create_forecast_client(user_agent: String) -> LocationForecastConfiguration {
@@ -304,13 +306,17 @@ async fn handle_route_command(
         steps: vec![],
         coords: vec![],
     };
-    let route_config = create_ors_client(user_agent.clone(), api_key);
+    let directions_service_config = create_ors_client(user_agent.clone(), api_key);
+
+    let directions_service_api_client =
+        DirectionsServiceApiClient::new(directions_service_config.into());
 
     // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
     let direction_service_options = DirectionsService::new(coords);
 
-    let response =
-        get_geo_json_route(&route_config, "driving-car", direction_service_options).await;
+    let response = directions_service_api_client
+        .get_geo_json_route("driving-car", direction_service_options)
+        .await;
 
     let result = match response {
         Ok(result) => result,
