@@ -92,6 +92,12 @@ impl RouteForecast for RouteForecastService {
             .collect();
         let response =
             handle_route_command(coords, input.number_of_forecasts, user_agent, ors_api_key).await;
+
+        if response.steps.is_empty() {
+            println!("{}: Could not find route", Local::now());
+            return Err(tonic::Status::new(tonic::Code::NotFound, "Route not found"));
+        }
+
         println!("{}: Returning RouteWithForecastResponse", Local::now());
         Ok(tonic::Response::new(response))
     }
