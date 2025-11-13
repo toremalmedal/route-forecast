@@ -32,6 +32,8 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
 
+use chrono::Local;
+
 use crate::proto::route_forecast_server::{RouteForecast, RouteForecastServer};
 use crate::proto::{
     self, Coordinate, FILE_DESCRIPTOR_SET, Forecast, ForecastNextHour, Place, PlaceRequest,
@@ -64,6 +66,12 @@ impl RouteForecast for RouteForecastService {
         };
 
         let input = request.get_ref();
+        println!("{}: Recieved RouteWithForecastRequest", Local::now());
+        for coord in input.coordinates.clone() {
+            println!("longitude: {}", coord.longitude);
+            println!("latitude: {}", coord.latitude);
+        }
+        println!("number_of_forecasts: {}", input.number_of_forecasts);
 
         if input.number_of_forecasts < 2.0 {
             return Err(tonic::Status::invalid_argument(
@@ -84,6 +92,7 @@ impl RouteForecast for RouteForecastService {
             .collect();
         let response =
             handle_route_command(coords, input.number_of_forecasts, user_agent, ors_api_key).await;
+        println!("{}: Returning RouteWithForecastResponse", Local::now());
         Ok(tonic::Response::new(response))
     }
 
@@ -100,6 +109,9 @@ impl RouteForecast for RouteForecastService {
                 panic!("couldn't find env var USER_AGENT: {e}");
             }
         };
+        println!("{}: Recieved PlaceRequest", Local::now());
+        println!("name: {}", search);
+
         let response = get_place_request(search, user_agent).await;
         match response {
             Ok(r) => {
@@ -119,17 +131,19 @@ impl RouteForecast for RouteForecastService {
                                     longitude: first_point.st.unwrap(),
                                 }),
                             };
-                            dbg!(&place);
+                            print!("Found place: {}", place.name);
                             place
                         })
                         .collect();
+                    println!("{}: Returning PlaceResponse", Local::now());
                     Ok(tonic::Response::new(proto::PlaceResponse { place: places }))
                 } else {
+                    println!("{}: Found no place", Local::now());
                     Err(tonic::Status::not_found("No place found"))
                 }
             }
             Err(e) => {
-                dbg!(e);
+                eprintln!("Error from 'stedsnavn' API: {e}");
                 Err(tonic::Status::internal("Error from 'stedsnavn' API"))
             }
         }
@@ -164,7 +178,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tls_config = ServerTlsConfig::new().identity(Identity::from_pem(&cert, &key));
 
-    eprintln!("Starting server at {}", addr);
+    println!("Starting server at {}", addr);
 
     let server = Server::builder()
         .accept_http1(true)
@@ -177,7 +191,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
 
     match server {
-        Ok(_) => eprintln!("Server started at {}", addr),
+        Ok(_) => print!("Server started at {}", addr),
         Err(e) => eprintln!("Server could not start, got error: {}", e),
     }
 
@@ -397,6 +411,7 @@ async fn handle_route_command(
         let result = get_forecast(pos, user_agent.clone()).await;
         match result {
             Ok(forecast) => {
+                //TODO:_ This assumes every index + 1 -> increases time by an hour
                 let duration_int = (duration / 3600.0) as usize;
                 let current_hour = forecast.properties.timeseries[duration_int].clone();
                 let instant_details = current_hour.data.instant.details;
@@ -432,8 +447,8 @@ async fn handle_route_command(
                     }
                 }
             }
-            Err(err) => {
-                panic!("{err}");
+            Err(e) => {
+                eprintln!("Could not retrieve forecast: {e}");
             }
         };
     }
@@ -461,6 +476,9 @@ fn sample_steps_from_feature(
         let mut current_distance = 0.0;
 
         for step in steps {
+            //TODO: This works quite bad for steps with long distances.
+            //step will overshoot the distance we want and we end up with fewer forecasts than
+            //expected
             if current_distance >= step_distance {
                 current_distance = 0.0;
 
