@@ -2387,6 +2387,7 @@ name = "weather-route"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "http",
  "http-cache-reqwest",
  "location-forecast-client",
  "ors-client",

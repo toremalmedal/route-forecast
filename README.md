@@ -34,6 +34,7 @@ Run time env variables:
 - GRCP_SERVER_URL - url for the gRCP server
 - CERT_PATH - path for certificate
 - KEY_PATH - path for private key
+- ALLOW_ORIGIN - domain to add to allow origin header
 
 - Generate self signed certificate for localhost:
 
@@ -48,7 +49,8 @@ export ORS_API_KEY="$(pass <your_api_key>)" && \
 export USER_AGENT="mydomain.no/app contact@mydomain.no" && \
 export GRPC_SERVER_URL="[::1]:50051" && \
 export CERT_PATH="./certs/local/cert.pem" && \
-export KEY_PATH="./certs/local/cert.pem" && \
+export KEY_PATH="./certs/local/key.pem" && \
+export ALLOW_ORIGIN="your-consumer.org" && \
 cargo run --bin route-forecast-server --features server
 ```
 
@@ -56,7 +58,7 @@ cargo run --bin route-forecast-server --features server
 
 ```{bash}
 docker build . -t route-api
-docker run -e ORS_API_KEY="$(pass ors-api-key)" -e USER_AGENT="mydomain.no/app contact@mydomain.no" -e GRPC_SERVER_URL="0.0.0.0:50051" -e CERT_PATH="/path/to/cer.pem" -e KEY_PATH="/path/to/key.pem" -p 50051:50051 --name route-api -t route-api:latest
+docker run -e ORS_API_KEY="$(pass ors-api-key)" -e USER_AGENT="mydomain.no/app contact@mydomain.no" -e GRPC_SERVER_URL="0.0.0.0:50051" -e CERT_PATH="/certs/local/cert.pem" -e KEY_PATH="/certs/local/key.pem" -e ALLOW_ORIGIN="https://origin.com" -v ./certs:/certs -p 50051:50051 --name route-api -t route-api:latest
 ```
 
 - Provide grpcurl the generated cert and test reflection server and method:
