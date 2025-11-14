@@ -13,9 +13,14 @@ use location_forecast_client::apis::configuration::Configuration as LocationFore
 use location_forecast_client::apis::data_api::{CompactGetError, DataApi, DataApiClient};
 use location_forecast_client::models::MetjsonForecast;
 
+use ors_client::apis::Error as ORSError;
 use ors_client::apis::configuration::Configuration as ORSConfiguration;
-use ors_client::apis::directions_service_api::{DirectionsServiceApi, DirectionsServiceApiClient};
-use ors_client::models::DirectionsService;
+use ors_client::apis::directions_service_api::{
+    DirectionsServiceApi, DirectionsServiceApiClient, GetGeoJsonRouteError,
+    GetSimpleGeoJsonRouteError,
+};
+
+use ors_client::models::{DirectionsService, GetSimpleGeoJsonRoute200Response};
 
 use stedsnavn_client::apis::Error as PlaceError;
 use stedsnavn_client::apis::configuration::Configuration as PlaceConfiguration;
@@ -68,39 +73,55 @@ impl RouteForecast for RouteForecastService {
 
         let input = request.get_ref();
         println!("{}: Recieved RouteWithForecastRequest", Local::now());
-        for coord in input.coordinates.clone() {
-            println!("longitude: {}", coord.longitude);
-            println!("latitude: {}", coord.latitude);
-        }
+
         println!("number_of_forecasts: {}", input.number_of_forecasts);
-
-        if input.number_of_forecasts < 2.0 {
+        if !(1.0..=20.0).contains(&input.number_of_forecasts) {
             return Err(tonic::Status::invalid_argument(
-                "number_of_forecasts should be between 2 and 10",
+                "number_of_forecasts should be between 2 and 19",
             ));
         }
 
-        if input.number_of_forecasts > 20.0 {
-            return Err(tonic::Status::invalid_argument(
-                "number_of_forecasts should be between 2 and 10",
-            ));
-        }
-
-        let coords = input
+        // "Itinerary – A list of a tour’s or entire trip’s schedule and major travel elements."
+        // - https://www.travelwta.com/travel-terms-glossary/
+        let itinerary_coords = input
             .coordinates
             .iter()
-            .map(|coord| vec![coord.longitude, coord.latitude])
+            .map(|coord| {
+                println!("longitude: {}", coord.longitude);
+                println!("latitude: {}", coord.latitude);
+                vec![coord.longitude, coord.latitude]
+            })
             .collect();
-        let response =
-            handle_route_command(coords, input.number_of_forecasts, user_agent, ors_api_key).await;
 
-        if response.steps.is_empty() {
-            println!("{}: Could not find route", Local::now());
-            return Err(tonic::Status::new(tonic::Code::NotFound, "Route not found"));
+        let geo_json_route_result = get_route(itinerary_coords, user_agent, ors_api_key).await;
+        let geo_json_route = match geo_json_route_result {
+            Ok(g) => g,
+            Err(e) => {
+                println!("{}: Could not find route, got error {}", Local::now(), e);
+                return Err(tonic::Status::new(tonic::Code::NotFound, "Route not found"));
+            }
+        };
+
+        let route_with_forecast_result =
+            handle_route_command(geo_json_route, input.number_of_forecasts).await;
+
+        match route_with_forecast_result {
+            Ok(r) => {
+                println!("{}: Returning RouteWithForecastResponse", Local::now());
+                return Ok(tonic::Response::new(r));
+            }
+            Err(e) => {
+                println!(
+                    "{}: Could not create RouteWithForecastResponse, got error {}",
+                    Local::now(),
+                    e
+                );
+                return Err(tonic::Status::new(
+                    tonic::Code::NotFound,
+                    "Forecast for route not found",
+                ));
+            }
         }
-
-        println!("{}: Returning RouteWithForecastResponse", Local::now());
-        Ok(tonic::Response::new(response))
     }
 
     async fn get_place(
@@ -119,41 +140,67 @@ impl RouteForecast for RouteForecastService {
         println!("{}: Recieved PlaceRequest", Local::now());
         println!("name: {}", search);
 
-        let response = get_place_request(search, user_agent).await;
-        match response {
+        let api_response_result = get_place_request(search, user_agent).await;
+        let api_response = match api_response_result {
             Ok(r) => {
-                if r.metadata.unwrap().totalt_antall_treff.unwrap() > 0 {
-                    let places = r
-                        .navn
-                        .unwrap()
-                        .iter()
-                        .map(|n| {
-                            let first_place = n.stedsnavn.clone().unwrap()[0].clone();
-                            let first_point = n.representasjonspunkt.clone().unwrap();
-                            let place = Place {
-                                name: first_place.skrivemte.unwrap(),
-                                point: Some(Coordinate {
-                                    latitude: first_point.nord.unwrap(),
-
-                                    longitude: first_point.st.unwrap(),
-                                }),
-                            };
-                            print!("Found place: {}", place.name);
-                            place
-                        })
-                        .collect();
-                    println!("{}: Returning PlaceResponse", Local::now());
-                    Ok(tonic::Response::new(proto::PlaceResponse { place: places }))
-                } else {
-                    println!("{}: Found no place", Local::now());
-                    Err(tonic::Status::not_found("No place found"))
+                // Metadata is technically optional
+                let metadata = match r.metadata.clone() {
+                    Some(m) => m,
+                    None => {
+                        println!("{}: No place_result.metadata", Local::now());
+                        return Err(tonic::Status::not_found("No place found"));
+                    }
+                };
+                // ReturSted can return no matches for a name
+                match metadata.totalt_antall_treff {
+                    Some(t) => {
+                        if t < 1 {
+                            println!("{}: Total number of places retrieved 0", Local::now());
+                            return Err(tonic::Status::not_found("No place found"));
+                        }
+                    }
+                    None => {
+                        println!(
+                            "{}: place_result.metadata.totalt_antall_treff does not exist",
+                            Local::now()
+                        );
+                        return Err(tonic::Status::not_found("No place found"));
+                    }
                 }
+                r
             }
             Err(e) => {
-                eprintln!("Error from 'stedsnavn' API: {e}");
-                Err(tonic::Status::internal("Error from 'stedsnavn' API"))
+                eprintln!("{}: Error from 'stedsnavn' API: {e}", Local::now());
+                return Err(tonic::Status::internal("Error from 'stedsnavn' API"));
             }
-        }
+        };
+
+        let name_search_response = match api_response.navn {
+            Some(n) => n,
+            None => {
+                println!("{}: Total number of places retrieved 0", Local::now());
+                return Err(tonic::Status::internal("Error from 'stedsnavn' API"));
+            }
+        };
+        let places = name_search_response
+            .iter()
+            .map(|n| {
+                let first_place = n.stedsnavn.clone().unwrap()[0].clone();
+                let first_point = n.representasjonspunkt.clone().unwrap();
+                let place = Place {
+                    name: first_place.skrivemte.unwrap(),
+                    point: Some(Coordinate {
+                        latitude: first_point.nord.unwrap(),
+                        longitude: first_point.st.unwrap(),
+                    }),
+                };
+                print!("Found place: {}", place.name);
+                place
+            })
+            .collect();
+
+        println!("{}: Returning PlaceResponse", Local::now());
+        Ok(tonic::Response::new(proto::PlaceResponse { place: places }))
     }
 }
 
@@ -295,17 +342,14 @@ fn create_ors_client(user_agent: String, api_key: String) -> ORSConfiguration {
     route_config
 }
 
-async fn handle_route_command(
+async fn get_route(
     coords: Vec<Vec<f64>>,
-    number_of_forecasts: f64,
     user_agent: String,
     api_key: String,
-) -> RouteWithForecastResponse {
-    let default_response = RouteWithForecastResponse {
-        forecasts: vec![],
-        steps: vec![],
-        coords: vec![],
-    };
+) -> Result<
+    ors_client::models::GetSimpleGeoJsonRoute200Response,
+    ORSError<ors_client::apis::directions_service_api::GetGeoJsonRouteError>,
+> {
     let directions_service_config = create_ors_client(user_agent.clone(), api_key);
 
     let directions_service_api_client =
@@ -314,94 +358,69 @@ async fn handle_route_command(
     // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
     let direction_service_options = DirectionsService::new(coords);
 
-    let response = directions_service_api_client
+    directions_service_api_client
         .get_geo_json_route("driving-car", direction_service_options)
-        .await;
+        .await
+}
 
-    let result = match response {
-        Ok(result) => result,
-        Err(err) => {
-            println!("Route service returned error: {err}");
-            return default_response;
-        }
-    };
-
-    // Attribution is required to use open route services
-    // https://openrouteservice.org/terms-of-service/
-    //let metadata = match result.metadata {
-    //    Some(metadata) => match metadata.attribution {
-    //        Some(attribution) => attribution,
-    //        None => {
-    //            println!("No attribution found in metadata from route service, using default ");
-    //            "© openrouteservice.org by HeiGIT | Map data © OpenStreetMap contributors"
-    //                .to_string()
-    //        }
-    //    },
-    //    None => {
-    //        println!("No metadata returned by route service, using default");
-    //        "© openrouteservice.org by HeiGIT | Map data © OpenStreetMap contributors".to_string()
-    //    }
-    //};
-
-    let feature = match result.features {
+async fn handle_route_command(
+    json_route: GetSimpleGeoJsonRoute200Response,
+    number_of_forecasts: f64,
+) -> Result<RouteWithForecastResponse, String> {
+    let features = match json_route.features {
         Some(features) => features[0].clone(),
         None => {
-            println!("No feature returned by route service");
-            return default_response;
+            println!("No feature found in geo_json_route");
+            return Err("No features found".to_string());
         }
     };
 
     // Feature is just a serde "value" at this point (bad/generic spec). We convert it to a Feature:
-    let geo_json_feature = <Feature as Deserialize>::deserialize(feature);
-
-    // We want to store some names to add to our weather data, this is not returned by the forecast service:
-    let mut names: Vec<String> = vec![];
-
-    let mut response_steps: Vec<ResponseStep> = vec![];
-    let mut response_coords: Vec<Coordinate> = vec![];
+    let geo_json_features_result = <Feature as Deserialize>::deserialize(features);
+    let geo_json_features = match geo_json_features_result {
+        Ok(f) => f,
+        Err(e) => {
+            println!("Could not convert serde feature to geo_json_feature");
+            return Err(format!(
+                "Could not convert serde feature to geo_json_feature, got error: {}",
+                e,
+            ));
+        }
+    };
 
     // We want positions to use with a weather service. A Feature contains indices
     // (way_points) that points to the index of a vector of coordinates that contains a start and stop
     // coordinate for the feature: We use the start coordinate.
-    let coords_with_duration = match geo_json_feature {
-        Ok(geo_json_feature) => {
-            let steps = &geo_json_feature.properties.segments[0].steps;
+    let steps = &geo_json_features.properties.segments[0].steps;
 
-            for s in steps {
-                let new_response_step = ResponseStep {
-                    distance: s.distance,
-                    dration: s.duration,
-                    instruction: s.instruction.clone(),
-                    type_field: s.type_field,
-                    way_points: s.way_points.clone(),
-                    name: s.name.clone(),
-                };
-                response_steps.push(new_response_step);
-            }
+    let response_steps: Vec<ResponseStep> = steps
+        .iter()
+        .map(|s| ResponseStep {
+            distance: s.distance,
+            dration: s.duration,
+            instruction: s.instruction,
+            type_field: s.type_field,
+            way_points: s.way_points,
+            name: s.name,
+        })
+        .collect();
 
-            let full_distance = geo_json_feature.properties.segments[0].distance;
-            let full_duration = geo_json_feature.properties.segments[0].duration;
-            let sampled_steps =
-                sample_steps_from_feature(steps, full_distance, number_of_forecasts, full_duration);
+    let full_distance = geo_json_features.properties.segments[0].distance;
+    let full_duration = geo_json_features.properties.segments[0].duration;
+    let sampled_steps =
+        sample_steps_from_feature(steps, full_distance, number_of_forecasts, full_duration);
 
-            for s in &sampled_steps {
-                names.push(s.name.clone());
-            }
+    let all_coordinates = geo_json_features.geometry.coordinates;
 
-            let all_coordinates = geo_json_feature.geometry.coordinates;
-            for c in all_coordinates.clone() {
-                response_coords.push(Coordinate {
-                    longitude: c[0],
-                    latitude: c[1],
-                });
-            }
-            find_geometry_from_steps(sampled_steps, all_coordinates)
-        }
-        Err(err) => {
-            println!("No route found, got error: {err}");
-            vec![]
-        }
-    };
+    let response_coords: Vec<Coordinate> = all_coordinates
+        .iter()
+        .map(|c| Coordinate {
+            longitude: c[0],
+            latitude: c[1],
+        })
+        .collect();
+
+    let coords_with_duration = find_geometry_from_steps(sampled_steps, all_coordinates);
 
     let mut forecasts: Vec<Forecast> = vec![];
 
@@ -423,7 +442,8 @@ async fn handle_route_command(
         let result = get_forecast(pos, user_agent.clone()).await;
         match result {
             Ok(forecast) => {
-                //TODO:_ This assumes every index + 1 -> increases time by an hour
+                //TODO: This assumes every index + 1 -> increases time by an hour, not correct
+                //after x hours
                 let duration_int = (duration / 3600.0) as usize;
                 let current_hour = forecast.properties.timeseries[duration_int].clone();
                 let instant_details = current_hour.data.instant.details;
@@ -464,11 +484,11 @@ async fn handle_route_command(
             }
         };
     }
-    RouteWithForecastResponse {
+    Ok(RouteWithForecastResponse {
         forecasts,
         steps: response_steps,
         coords: response_coords,
-    }
+    })
 }
 
 fn sample_steps_from_feature(
