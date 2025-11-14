@@ -1,12 +1,13 @@
 use core::panic;
 
+use http::{HeaderName, HeaderValue};
 use reqwest::Method;
 
 // The spec we generate our ors_client from lacks the response signature of features from GeoJSON:
 mod geo_json_200_response;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic_web::GrpcWebLayer;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 mod forecast;
 mod place;
@@ -141,10 +142,15 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
+    let allow_origin_domain = std::env::var("ALLOW_ORIGIN").unwrap();
+
     let cors = CorsLayer::new()
-        .allow_headers(Any)
-        .allow_methods([Method::GET])
-        .allow_origin(Any);
+        .allow_headers([
+            http::header::CONTENT_TYPE,
+            HeaderName::from_static("x-grpc-web"),
+        ])
+        .allow_methods([Method::GET, Method::POST])
+        .allow_origin(allow_origin_domain.parse::<HeaderValue>().unwrap());
 
     let cert_path = std::env::var("CERT_PATH").unwrap();
     let key_path = std::env::var("KEY_PATH").unwrap();
