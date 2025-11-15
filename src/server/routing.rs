@@ -1,4 +1,4 @@
-use super::forecast::get_forecast;
+use super::forecast::{create_forecast_client, get_forecast};
 use super::geo_json_200_response::Feature;
 use crate::proto::{
     self, Coordinate, Forecast, ForecastNextHour, RouteWithForecastResponse, Step as ResponseStep,
@@ -14,6 +14,8 @@ use reqwest_middleware::ClientBuilder;
 use serde::Deserialize;
 
 use ors_client::models::{DirectionsService, GetSimpleGeoJsonRoute200Response};
+
+use location_forecast_client::apis::data_api::DataApiClient;
 
 fn create_ors_client(user_agent: String, api_key: String) -> ORSConfiguration {
     let mut route_config = ORSConfiguration::new();
@@ -127,6 +129,9 @@ pub async fn handle_route_command(
 
     let mut forecasts: Vec<Forecast> = vec![];
 
+    let location_config = create_forecast_client(user_agent);
+    let data_api_client = DataApiClient::new(location_config.into());
+
     for coord in coords_with_duration {
         let duration = coord[2];
         let coord = Coordinate {
@@ -134,7 +139,7 @@ pub async fn handle_route_command(
             latitude: coord[1],
         };
 
-        let result = get_forecast(coord, user_agent.clone()).await;
+        let result = get_forecast(coord, &data_api_client).await;
         match result {
             Ok(forecast) => {
                 //TODO: This assumes every index + 1 -> increases time by an hour, not correct
