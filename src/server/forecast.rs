@@ -65,8 +65,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_client_success() {
-        let mut mock_data_api = MockDataApi::new();
-
         let coordinates = vec![8.0, 60.0];
         let geometry = PointGeometry {
             coordinates,
@@ -79,6 +77,7 @@ mod tests {
             r#type: ForecastType::Feature,
         };
 
+        let mut mock_data_api = MockDataApi::new();
         mock_data_api
             .expect_compact_get()
             .returning(move |_a, _b, _c| Ok(ok_forecast.clone()));

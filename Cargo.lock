@@ -1846,6 +1846,7 @@ name = "stedsnavn-client"
 version = "1.1.0"
 dependencies = [
  "async-trait",
+ "mockall",
  "reqwest",
  "reqwest-middleware",
  "serde",
@@ -2474,6 +2475,7 @@ dependencies = [
  "reqwest-middleware",
  "rustls",
  "serde",
+ "serde_json",
  "stedsnavn-client",
  "tokio",
  "tonic",

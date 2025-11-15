@@ -5,6 +5,7 @@ use reqwest::Method;
 
 // The spec we generate our ors_client from lacks the response signature of features from GeoJSON:
 mod geo_json_200_response;
+use stedsnavn_client::apis::default_api::DefaultApiClient;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::CorsLayer;
@@ -116,7 +117,10 @@ impl RouteForecast for RouteForecastService {
         println!("{}: Recieved PlaceRequest", Local::now());
         println!("name: {}", search);
 
-        let places_result = place::get_places(search, user_agent).await;
+        let config = place::create_place_config(user_agent);
+        let api_place_client = DefaultApiClient::new(config.into());
+
+        let places_result = place::get_places(search, &api_place_client).await;
         match places_result {
             Ok(place) => {
                 println!("{}: Returning PlaceResponse", Local::now());
