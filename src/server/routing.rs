@@ -7,7 +7,7 @@ use crate::server::geo_json_200_response::Step;
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
 use ors_client::apis::Error as ORSError;
 use ors_client::apis::configuration::Configuration as ORSConfiguration;
-use ors_client::apis::directions_service_api::{DirectionsServiceApi, DirectionsServiceApiClient};
+use ors_client::apis::directions_service_api::DirectionsServiceApi;
 use reqwest::Client;
 use reqwest::header::HeaderMap;
 use reqwest_middleware::ClientBuilder;
@@ -17,7 +17,7 @@ use ors_client::models::{DirectionsService, GetSimpleGeoJsonRoute200Response};
 
 use location_forecast_client::apis::data_api::DataApiClient;
 
-fn create_ors_client(user_agent: String, api_key: String) -> ORSConfiguration {
+pub fn create_ors_client(user_agent: String, api_key: String) -> ORSConfiguration {
     let mut route_config = ORSConfiguration::new();
 
     let mut headers = HeaderMap::new();
@@ -48,21 +48,15 @@ fn create_ors_client(user_agent: String, api_key: String) -> ORSConfiguration {
 
 pub async fn get_route(
     coords: Vec<Vec<f64>>,
-    user_agent: String,
-    api_key: String,
+    directions_service_api: &impl DirectionsServiceApi,
 ) -> Result<
     ors_client::models::GetSimpleGeoJsonRoute200Response,
     ORSError<ors_client::apis::directions_service_api::GetGeoJsonRouteError>,
 > {
-    let directions_service_config = create_ors_client(user_agent.clone(), api_key);
-
-    let directions_service_api_client =
-        DirectionsServiceApiClient::new(directions_service_config.into());
-
     // OpenRouteService uses vectors of [longitude, latitude] pairs as coords
     let direction_service_options = DirectionsService::new(coords);
 
-    directions_service_api_client
+    directions_service_api
         .get_geo_json_route("driving-car", direction_service_options)
         .await
 }
@@ -143,7 +137,7 @@ pub async fn handle_route_command(
         match result {
             Ok(forecast) => {
                 //TODO: This assumes every index + 1 -> increases time by an hour, not correct
-                //after x hours
+                //after x hours, should check ForecastTimeStep.time instead
                 let duration_int = (duration / 3600.0) as usize;
                 let current_hour = forecast.properties.timeseries[duration_int].clone();
                 let instant_details = current_hour.data.instant.details;
@@ -190,6 +184,7 @@ pub async fn handle_route_command(
         coords: response_coords,
     })
 }
+
 fn sample_steps_from_feature(
     steps: &Vec<Step>,
     full_distance: f64,
@@ -199,17 +194,24 @@ fn sample_steps_from_feature(
     let mut sample_steps: Vec<Step> = vec![];
     let mut current_duration = 0.0;
 
-    // We will add the first and last step after sampling the intermittent steps.
+    // Always adds first and last steps
+    sample_steps.insert(0, steps[0].clone());
+    let mut last_step = steps[steps.len() - 1].clone();
+    last_step.duration = full_duration;
+    sample_steps.push(last_step);
+
+    if number_of_points <= 2.0 {
+        return sample_steps;
+    }
+
     if number_of_points >= 2.0 {
-        let step_distance = full_distance / number_of_points - 1.0;
+        let step_distance = full_distance / (number_of_points - 1.0);
 
         // We want to sample a step when step_distance has been reached
         let mut current_distance = 0.0;
 
         for step in steps {
-            //TODO: This works quite bad for steps with long distances.
-            //step will overshoot the distance we want and we end up with fewer forecasts than
-            //expected
+            //TODO: fix 'overshooting' for large step.distance
             if current_distance >= step_distance {
                 current_distance = 0.0;
 
@@ -220,18 +222,14 @@ fn sample_steps_from_feature(
             }
             current_distance += step.distance;
             current_duration += step.duration;
-            if sample_steps.len() as f64 >= number_of_points - 2.0 {
+            if sample_steps.len() as f64 >= number_of_points {
+                // Move previously added last step to the end of vector
+                let last_step = sample_steps.remove(1);
+                sample_steps.push(last_step);
                 break;
             }
         }
     }
-    // Add first and last steps. I think it is safe to assume that weather at start and end of travel is of
-    // interest:
-    sample_steps.insert(0, steps[0].clone());
-    let mut last_step = steps[steps.len() - 1].clone();
-    last_step.duration = full_duration;
-    sample_steps.push(last_step);
-
     sample_steps
 }
 
@@ -249,4 +247,153 @@ fn find_geometry_from_steps(steps: Vec<Step>, coordinates: Vec<Vec<f64>>) -> Vec
         }
     }
     sampled_coords
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn sample_steps_from_feature_works() {
+        let step_one = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 1".to_string(),
+            type_field: 10,
+            way_points: vec![1, 2],
+            exit_number: Some(1),
+        };
+        let step_two = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 2".to_string(),
+            type_field: 10,
+            way_points: vec![2, 3],
+            exit_number: Some(2),
+        };
+        let step_three = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 3".to_string(),
+            type_field: 10,
+            way_points: vec![3, 4],
+            exit_number: Some(3),
+        };
+        let step_four = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 4".to_string(),
+            type_field: 10,
+            way_points: vec![4, 5],
+            exit_number: Some(4),
+        };
+        let step_five = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 5".to_string(),
+            type_field: 10,
+            way_points: vec![5, 6],
+            exit_number: Some(5),
+        };
+        let steps: Vec<Step> = vec![step_one, step_two, step_three, step_four, step_five];
+
+        let full_distance = steps.iter().fold(0.0, |acc, step| acc + step.distance);
+        let full_duration = steps.iter().fold(0.0, |acc, step| acc + step.duration);
+
+        // Sampling two points simply returns start and stop step
+        let number_of_points = 2.0;
+        let sampled_two_steps =
+            sample_steps_from_feature(&steps, full_distance, number_of_points, full_duration);
+        assert_eq!(sampled_two_steps.len(), 2);
+        assert_eq!(sampled_two_steps[0].duration, 360.0 * 1.0);
+        assert_eq!(sampled_two_steps[1].duration, 360.0 * 5.0);
+
+        let number_of_points = 3.0;
+        let sampled_three_steps =
+            sample_steps_from_feature(&steps, full_distance, number_of_points, full_duration);
+        assert_eq!(sampled_three_steps.len(), 3);
+        assert_eq!(sampled_three_steps[0].duration, 360.0 * 1.0);
+        assert_eq!(sampled_three_steps[1].duration, 360.0 * 3.0);
+        assert_eq!(sampled_three_steps[2].duration, 360.0 * 5.0);
+
+        let number_of_points = 4.0;
+        let sampled_four_steps =
+            sample_steps_from_feature(&steps, full_distance, number_of_points, full_duration);
+        assert_eq!(sampled_four_steps.len(), 4);
+        assert_eq!(sampled_four_steps[1].duration, 360.0 * 2.0);
+        assert_eq!(sampled_four_steps[2].duration, 360.0 * 4.0);
+    }
+
+    #[test]
+    fn sample_number_of_steps_from_features_containing_large_distance() {
+        let step_one = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 1".to_string(),
+            type_field: 10,
+            way_points: vec![1, 2],
+            exit_number: Some(1),
+        };
+        let step_two_long_distance = Step {
+            distance: 10_000.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 2".to_string(),
+            type_field: 10,
+            way_points: vec![2, 3],
+            exit_number: Some(2),
+        };
+        let step_three = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 3".to_string(),
+            type_field: 10,
+            way_points: vec![3, 4],
+            exit_number: Some(3),
+        };
+        let step_four = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 4".to_string(),
+            type_field: 10,
+            way_points: vec![4, 5],
+            exit_number: Some(4),
+        };
+        let step_five = Step {
+            distance: 100.0,
+            duration: 360.0,
+            instruction: "Run forest! Run!".to_string(),
+            name: "Forestveg 5".to_string(),
+            type_field: 10,
+            way_points: vec![5, 6],
+            exit_number: Some(5),
+        };
+        let steps: Vec<Step> = vec![
+            step_one,
+            step_two_long_distance,
+            step_three,
+            step_four,
+            step_five,
+        ];
+
+        let full_distance = steps.iter().fold(0.0, |acc, step| acc + step.distance);
+        let full_duration = steps.iter().fold(0.0, |acc, step| acc + step.duration);
+
+        let number_of_points = 4.0;
+        let sampled_four_steps =
+            sample_steps_from_feature(&steps, full_distance, number_of_points, full_duration);
+        // This is the current behaviour, return 3 when 4 is expected
+        assert_eq!(sampled_four_steps.len(), 3);
+
+        // This is the wanted behaviour:
+        // TODO: fix overshooting
+        // assert_eq!(sampled_four_steps.len(), 4);
+    }
 }

@@ -1,6 +1,7 @@
 use core::panic;
 
 use http::{HeaderName, HeaderValue};
+use ors_client::apis::directions_service_api::DirectionsServiceApiClient;
 use reqwest::Method;
 
 // The spec we generate our ors_client from lacks the response signature of features from GeoJSON:
@@ -67,8 +68,13 @@ impl RouteForecast for RouteForecastService {
             })
             .collect();
 
+        let directions_service_config = routing::create_ors_client(user_agent.clone(), ors_api_key);
+
+        let directions_service_api_client =
+            DirectionsServiceApiClient::new(directions_service_config.into());
+
         let geo_json_route_result =
-            routing::get_route(itinerary_coords, user_agent.clone(), ors_api_key).await;
+            routing::get_route(itinerary_coords, &directions_service_api_client).await;
 
         let geo_json_route = match geo_json_route_result {
             Ok(g) => g,
