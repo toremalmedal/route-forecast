@@ -41,10 +41,11 @@ fi
 
 if [ ! -d "./stedsnavn-client/" ]; then
   curl https://ws.geonorge.no/stedsnavn/v1/openapi.json | jq >>stedsnavn.json
-  docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate -i /local/stedsnavn.json \
+  echo "$(jq 'del(.paths["/navn", "/navneobjekttyper", "/sprak", "/punkt"])' stedsnavn.json)" >stedsnavn-edit.json
+  docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate -i /local/stedsnavn-edit.json \
     -g rust -o /local/stedsnavn-client --package-name=stedsnavn-client \
     --additional-properties=supportMiddleware=true,library=reqwest-trait,mockall=true
-  rm stedsnavn.json
+  rm stedsnavn.json stedsnavn-edit.json
 fi
 
 cargo add --path ./stedsnavn-client
