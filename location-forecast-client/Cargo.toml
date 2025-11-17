@@ -1,0 +1,22 @@
+[package]
+name = "location-forecast-client"
+version = "2.0.0"
+authors = ["weatherapi-adm@met.no"]
+description = "Weather forecasts for any location on earth"
+license = "CC BY 4.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = "^1.0"
+serde_repr = "^0.1"
+url = "^2.5"
+async-trait = "^0.1"
+reqwest = { version = "^0.12", default-features = false, features = ["json", "multipart"] }
+reqwest-middleware = { version = "^0.4", features = ["json", "multipart"] }
+mockall = { version = "^0.13", optional = true}
+[features]
+default = ["native-tls"]
+native-tls = ["reqwest/native-tls"]
+rustls-tls = ["reqwest/rustls-tls"]
+mockall = ["dep:mockall"]
