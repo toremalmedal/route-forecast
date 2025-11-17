@@ -33,7 +33,7 @@ if [ ! -d "./ors-client/" ]; then
   echo "$(jq 'del(.paths["/pois"])' ors-swagger.json)" >ors-swagger-edit.json
   docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate -i /local/ors-swagger-edit.json \
     -g rust -o /local/ors-client --package-name=ors-client \
-    --additional-properties=supportMiddleware=true,library=reqwest-trait,mockall=true
+    --additional-properties=supportMiddleware=true,library=reqwest-trait,mockall=true --openapi-normalizer FILTER="tag:Directions Service|Health Service|Status service"
   rm ors-swagger.json ors-swagger-edit.json
 fi
 
