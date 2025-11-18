@@ -4,6 +4,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let build_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     #[cfg(feature = "server")]
+    use std::process::Command;
+    #[cfg(feature = "server")]
+    match Command::new("bash").arg("./create-api-clients.sh").output() {
+        Ok(_) => {}
+        Err(e) => panic!("Could not run ./create-api-clients.sh: {}", e),
+    }
+
+    #[cfg(feature = "server")]
     tonic_prost_build::configure()
         // To allow for optional fields
         .protoc_arg("--experimental_allow_proto3_optional")

@@ -47,7 +47,3 @@ if [ ! -d "./stedsnavn-client/" ]; then
     --additional-properties=supportMiddleware=true,library=reqwest-trait,mockall=true
   rm stedsnavn.json stedsnavn-edit.json
 fi
-
-cargo add --path ./stedsnavn-client --optional
-cargo add --path ./ors-client --optional
-cargo add --path ./location-forecast-client --optional
