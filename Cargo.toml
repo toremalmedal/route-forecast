@@ -28,6 +28,7 @@ server = [
     "http-cache-reqwest",
     "tonic-web",
     "tower-http",
+  "rustls",
 ]
 
 [dependencies]
@@ -39,7 +40,7 @@ prost-types = "0.14.1"
 
 reqwest = "0.12.24"
 reqwest-middleware = "0.4.2"
-rustls = "0.23.35"
+rustls = {version = "0.23.35", optional = true }
 
 serde = { version = "1.0.228", features = ["serde_derive"] }
 
@@ -54,9 +55,6 @@ tonic-web = {version = "0.14.2", optional=true}
 tonic-web-wasm-client = { version = "0.8.0", optional = true }
 tower-http = {version = "0.6.6", optional = true, features = ["cors"]}
 
-location-forecast-client = { path = "location-forecast-client", version = "2.0.0", features = ["mockall"] }
-ors-client = { path = "ors-client", version = "2.0.0", features = ["mockall"] }
-stedsnavn-client = { version = "1.1.0", path = "stedsnavn-client", features = ["mockall"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

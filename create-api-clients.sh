@@ -48,6 +48,6 @@ if [ ! -d "./stedsnavn-client/" ]; then
   rm stedsnavn.json stedsnavn-edit.json
 fi
 
-cargo add --path ./stedsnavn-client
-cargo add --path ./ors-client
-cargo add --path ./location-forecast-client
+cargo add --path ./stedsnavn-client --optional
+cargo add --path ./ors-client --optional
+cargo add --path ./location-forecast-client --optional
