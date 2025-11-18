@@ -47,7 +47,7 @@ openssl req -x509 -new -newkey rsa:4096 -nodes -keyout ./certs/local/key.pem -ou
 ```
 export ORS_API_KEY="$(pass <your_api_key>)" && \
 export USER_AGENT="mydomain.no/app contact@mydomain.no" && \
-export GRPC_SERVER_URL="[::1]:50051" && \
+export GRPC_SERVER_URL="127.0.0.1:50051" && \
 export CERT_PATH="./certs/local/cert.pem" && \
 export KEY_PATH="./certs/local/key.pem" && \
 export ALLOW_ORIGIN="your-consumer.org" && \
@@ -61,13 +61,14 @@ docker build . -t route-api
 docker run -e ORS_API_KEY="$(pass ors-api-key)" -e USER_AGENT="mydomain.no/app contact@mydomain.no" -e GRPC_SERVER_URL="0.0.0.0:50051" -e CERT_PATH="/certs/local/cert.pem" -e KEY_PATH="/certs/local/key.pem" -e ALLOW_ORIGIN="https://origin.com" -v ./certs:/certs -p 50051:50051 --name route-api -t route-api:latest
 ```
 
-- Provide grpcurl the generated cert and test reflection server and method:
+- Provide grpcurl with the generated cert. Test reflection server and a method:
 
 ```{bash}
 $ grpcurl -cacert ./certs/local/cert.pem 'localhost:50051' list
 grpc.reflection.v1.ServerReflection
 route_forecast.RouteForecast
-$ grpcurl -cacert ./certs/local/cert.pem 'localhost:50051' list  -d '{"coordinates": [{"longitude": 10.7335,"latitude": 59.9119},{"longitude": 10.7413, "latitude": 59.921}], "number_of_forecasts": 3}' '[::1]:50051' route_forecast.RouteForecast.GetRouteWithForecast
+
+$ grpcurl -cacert ./certs/local/cert.pem -d '{"coordinates": [{"longitude": 10.7335,"latitude": 59.9119},{"longitude": 10.7413, "latitude": 59.921}], "number_of_forecasts": 3}' 'localhost:50051' route_forecast.RouteForecast.GetRouteWithForecast
 {
   "forecasts": [
     {
@@ -124,6 +125,12 @@ weather-route = { version = "0.1.0", path = "<path_to_this_crate>", default-feat
 
 <! --TODO: Minimal yew project with example using the client (takes the first temp returned and views it, or shows an error): -->
 
+## Tests:
+
+Test using `cargo test` and the feature to test:
+
+Currently:
+`cargo test --features server`
 
 ## Tools
 
@@ -180,7 +187,4 @@ Free heigit plan: https://account.heigit.org/info/plans
 Docs: https://api.kartverket.no/stedsnavn/v1/
 
 OpenApi: https://api.kartverket.no/stedsnavn/v1/openapi.json
-
-
-## Testing
 

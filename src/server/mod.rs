@@ -1,10 +1,12 @@
 use core::panic;
 
 use http::{HeaderName, HeaderValue};
+use ors_client::apis::directions_service_api::DirectionsServiceApiClient;
 use reqwest::Method;
 
 // The spec we generate our ors_client from lacks the response signature of features from GeoJSON:
 mod geo_json_200_response;
+use stedsnavn_client::apis::default_api::DefaultApiClient;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::CorsLayer;
@@ -66,8 +68,13 @@ impl RouteForecast for RouteForecastService {
             })
             .collect();
 
+        let directions_service_config = routing::create_ors_client(user_agent.clone(), ors_api_key);
+
+        let directions_service_api_client =
+            DirectionsServiceApiClient::new(directions_service_config.into());
+
         let geo_json_route_result =
-            routing::get_route(itinerary_coords, user_agent.clone(), ors_api_key).await;
+            routing::get_route(itinerary_coords, &directions_service_api_client).await;
 
         let geo_json_route = match geo_json_route_result {
             Ok(g) => g,
@@ -116,7 +123,10 @@ impl RouteForecast for RouteForecastService {
         println!("{}: Recieved PlaceRequest", Local::now());
         println!("name: {}", search);
 
-        let places_result = place::get_places(search, user_agent).await;
+        let config = place::create_place_config(user_agent);
+        let api_place_client = DefaultApiClient::new(config.into());
+
+        let places_result = place::get_places(search, &api_place_client).await;
         match places_result {
             Ok(place) => {
                 println!("{}: Returning PlaceResponse", Local::now());

@@ -1,7 +1,6 @@
 /target
-/location-forecast-client
-/route-forecast-client
-/ors-client
-/stedsnavn-client
 /cache
 /certs
+/ors-client
+/location-forecast-client
+/stedsnavn-client
