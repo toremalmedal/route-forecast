@@ -153,7 +153,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let allow_origin_domain = std::env::var("ALLOW_ORIGIN").unwrap();
+    let allow_origin_domain = match std::env::var("ALLOW_ORIGIN") {
+        Ok(domain) => domain.parse::<HeaderValue>().unwrap(),
+        Err(_) => "*".parse::<HeaderValue>().unwrap(),
+    };
 
     let cors = CorsLayer::new()
         .allow_headers([
@@ -161,32 +164,38 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             HeaderName::from_static("x-grpc-web"),
         ])
         .allow_methods([Method::GET, Method::POST])
-        .allow_origin(allow_origin_domain.parse::<HeaderValue>().unwrap());
+        .allow_origin(allow_origin_domain);
 
-    let cert_path = std::env::var("CERT_PATH").unwrap();
-    let key_path = std::env::var("KEY_PATH").unwrap();
+    let cert_path = std::env::var("CERT_PATH");
+    let key_path = std::env::var("KEY_PATH");
 
-    let cert = std::fs::read_to_string(cert_path)?;
-    let key = std::fs::read_to_string(key_path)?;
+    // if cert and key exists in env variables, add tls layer
+    let server = match (cert_path, key_path) {
+        (Ok(c), Ok(k)) => {
+            let cert = std::fs::read_to_string(c)?;
+            let key = std::fs::read_to_string(k)?;
+            let tls_config = ServerTlsConfig::new().identity(Identity::from_pem(&cert, &key));
+            Server::builder()
+                .accept_http1(true)
+                .tls_config(tls_config)?
+                .layer(cors)
+                .layer(GrpcWebLayer::new())
+                .add_service(route_forecast_reflector)
+                .add_service(RouteForecastServer::new(route_forecast_service))
+                .serve(addr)
+        }
+        _ => Server::builder()
+            .accept_http1(true)
+            .layer(cors)
+            .layer(GrpcWebLayer::new())
+            .add_service(route_forecast_reflector)
+            .add_service(RouteForecastServer::new(route_forecast_service))
+            .serve(addr),
+    };
 
-    let tls_config = ServerTlsConfig::new().identity(Identity::from_pem(&cert, &key));
+    println!("Server starting at {}", &addr);
 
-    println!("Starting server at {}", addr);
-
-    let server = Server::builder()
-        .accept_http1(true)
-        .tls_config(tls_config)?
-        .layer(cors)
-        .layer(GrpcWebLayer::new())
-        .add_service(route_forecast_reflector)
-        .add_service(RouteForecastServer::new(route_forecast_service))
-        .serve(addr)
-        .await;
-
-    match server {
-        Ok(_) => print!("Server started at {}", addr),
-        Err(e) => eprintln!("Server could not start, got error: {}", e),
-    }
+    let _ = server.await;
 
     Ok(())
 }
