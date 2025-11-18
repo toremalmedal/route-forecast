@@ -113,6 +113,7 @@ impl RouteForecast for RouteForecastService {
     ) -> Result<tonic::Response<PlaceResponse>, tonic::Status> {
         let input = request.get_ref();
         let search = input.name.clone();
+        let municipality_str: Option<&str> = input.municipality.as_deref();
 
         let user_agent = match std::env::var("USER_AGENT") {
             Ok(val) => val,
@@ -126,7 +127,7 @@ impl RouteForecast for RouteForecastService {
         let config = place::create_place_config(user_agent);
         let api_place_client = DefaultApiClient::new(config.into());
 
-        let places_result = place::get_places(search, &api_place_client).await;
+        let places_result = place::get_places(search, municipality_str, &api_place_client).await;
         match places_result {
             Ok(place) => {
                 println!("{}: Returning PlaceResponse", Local::now());

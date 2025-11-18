@@ -11,9 +11,10 @@ use stedsnavn_client::models::ReturSted;
 
 pub async fn get_places(
     search: String,
+    municipality: Option<&str>,
     place_api_client: &impl PlaceApi,
 ) -> Result<Vec<Place>, tonic::Status> {
-    let api_response_result = get_place_request(search, place_api_client).await;
+    let api_response_result = get_place_request(search, municipality, place_api_client).await;
     let api_response = match api_response_result {
         Ok(r) => {
             // Metadata is technically optional
@@ -60,12 +61,18 @@ pub async fn get_places(
         .map(|n| {
             let first_place = n.stedsnavn.clone().unwrap()[0].clone();
             let first_point = n.representasjonspunkt.clone().unwrap();
+            let municipality = n.kommuner.clone().unwrap()[0]
+                .kommunenavn
+                .as_ref()
+                .unwrap()
+                .to_string();
             let place = Place {
                 name: first_place.skrivemte.unwrap(),
                 point: Some(Coordinate {
                     latitude: first_point.nord.unwrap(),
                     longitude: first_point.st.unwrap(),
                 }),
+                municipality: Some(municipality),
             };
             print!("Found place: {}", place.name);
             place
@@ -76,22 +83,23 @@ pub async fn get_places(
 
 async fn get_place_request(
     search: String,
+    municipality: Option<&str>,
     place_api_client: &impl PlaceApi,
 ) -> Result<ReturSted, PlaceError<StedGetError>> {
     place_api_client
         .sted_get(
             Some(&search),
-            Some(true), //fuzzy,
-            None,       //fnr,
-            None,       //knr,
-            None,       //kommunenavn,
-            None,       //fylkesnavn,
-            None,       //stedsnummer,
-            None,       //Some(vec!["By".to_string()]), //navneobjekttype,
-            None,       //utkoordsys,
-            Some(10),   //treff_per_side,
-            Some(1),    //side,
-            None,       //filtrer,
+            Some(true),   //fuzzy,
+            None,         //fnr,
+            None,         //knr,
+            municipality, //kommunenavn,
+            None,         //fylkesnavn,
+            None,         //stedsnummer,
+            None,         //navneobjekttype,
+            None,         //utkoordsys,
+            Some(10),     //treff_per_side,
+            Some(1),      //side,
+            None,         //filtrer,
         )
         .await
 }
@@ -559,13 +567,12 @@ mod tests {
   ]
 }";
 
-        let upstream_response: ReturSted = match serde_json::from_str(&stedsnavn_api_response_json)
-        {
+        let upstream_response: ReturSted = match serde_json::from_str(stedsnavn_api_response_json) {
             Ok(r) => r,
             Err(e) => {
                 panic!(
                     "Test failed while deserializing json to ReturSted, error: {}",
-                    e.to_string()
+                    e
                 );
             }
         };
@@ -575,7 +582,7 @@ mod tests {
             .expect_sted_get()
             .returning(move |_, _, _, _, _, _, _, _, _, _, _, _| Ok(upstream_response.clone()));
 
-        let actual_response = get_places("Arendal".to_string(), &mock_places_api)
+        let actual_response = get_places("Arendal".to_string(), None, &mock_places_api)
             .await
             .unwrap();
 
@@ -585,6 +592,7 @@ mod tests {
                 latitude: 58.46121,
             }),
             name: "Arendal".to_string(),
+            municipality: Some("Arendal".to_string()),
         };
         let two = Place {
             point: Some(Coordinate {
@@ -592,6 +600,7 @@ mod tests {
                 latitude: 58.46044,
             }),
             name: "Arendal kommune".to_string(),
+            municipality: Some("Arendal".to_string()),
         };
         let last = Place {
             point: Some(Coordinate {
@@ -599,6 +608,7 @@ mod tests {
                 latitude: 66.80328,
             }),
             name: "Rendal".to_string(),
+            municipality: Some("Meløy".to_string()),
         };
 
         assert_eq!(one, actual_response[0]);
