@@ -111,6 +111,30 @@ $ grpcurl -cacert ./certs/local/cert.pem -d '{"coordinates": [{"longitude": 10.7
     ....
   ]
 }
+
+$ grpcurl -cacert ./certs/local/cert.pem -d '{"name": "Arendal", "municipality": "Arendal"}' 'localhost:50051' route_forecast.RouteForecast.GetPlace
+
+{
+  "place": [
+    {
+      "point": {
+        "longitude": 8.76695,
+        "latitude": 58.46121
+      },
+      "name": "Arendal",
+      "municipality": "Arendal"
+    },
+...
+    {
+      "point": {
+        "longitude": 8.79001,
+        "latitude": 58.46696
+      },
+      "name": "Rosendal",
+      "municipality": "Arendal"
+    }
+  ]
+}
 ```
 
 ## Using the web client (in yew):

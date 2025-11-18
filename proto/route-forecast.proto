@@ -8,6 +8,7 @@ service RouteForecast{
 
 message PlaceRequest{
   string name = 1;
+  optional string municipality = 2;
 }
 
 message PlaceResponse{
@@ -17,6 +18,7 @@ message PlaceResponse{
 message Place{
   Coordinate point = 1;
   string name = 2;
+  optional string municipality = 3;
 }
 
 message Step{

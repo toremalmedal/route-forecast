@@ -25,11 +25,12 @@ pub async fn get_route_with_forecast(
 
 pub async fn get_place(
     name: String,
+    municipality: Option<String>,
     server_url: String,
 ) -> Result<tonic::Response<PlaceResponse>, Box<dyn Error>> {
     let wasm_client = Client::new(server_url);
     let mut client = RouteForecastClient::new(wasm_client);
-    let req = PlaceRequest { name };
+    let req = PlaceRequest { name, municipality };
     let request = tonic::Request::new(req);
     let response = client.get_place(request).await?;
     dbg!(&response);
