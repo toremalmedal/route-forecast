@@ -74,7 +74,7 @@ pub async fn get_places(
                 }),
                 municipality: Some(municipality),
             };
-            print!("Found place: {}", place.name);
+            println!("Found place: {}", place.name);
             place
         })
         .collect();
